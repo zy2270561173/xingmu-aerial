@@ -1,3 +1,5 @@
+> **来源：自制项目（星投屏）**
+> 本目录代码由仓库所有者自行开发，此前未公开发布；本仓库是首次公开版本。
 # 星投屏 Web 控制台
 
 Vue 3 + TypeScript + Vite + Pinia + `animal-island-ui-vue`。页面直接使用后端 REST 与首帧认证 WebSocket。

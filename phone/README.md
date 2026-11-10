@@ -1,3 +1,7 @@
+> **来源：自制项目（星投屏）**
+> 本目录代码由仓库所有者自行开发，此前未公开发布；本仓库是首次公开版本。
+> 目录名由 `android-app` 改为 `phone`，包名由 `com.starlight.tvcast.mobile` 改为 `app.xingmu.remote`，
+> 应用名改为「星幕遥控」。界面已按 Aerial 视觉规范重做（见 `docs/MOBILE-UI.md`）。
 # 星投屏手机遥控器
 
 原生 Kotlin + Jetpack Compose Android 应用，最低 Android 6.0（API 23）。电视接收端仍兼容 Android 4.1（API 16）。
