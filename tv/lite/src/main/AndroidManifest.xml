@@ -31,7 +31,9 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- largeHeap: on Android 4.x bitmaps live on the Java heap, which is 64-128 MB on these TVs. -->
-    <application
+    <!-- ExoPlayer's HLS/UI modules declare minSdk 21; the classes themselves run on 16+. This is the documented escape hatch and is verified on the 4.4 box. -->
+    <uses-sdk tools:overrideLibrary="com.google.android.exoplayer2,com.google.android.exoplayer2.core,com.google.android.exoplayer2.upstream,com.google.android.exoplayer2.source,com.google.android.exoplayer2.source.hls,com.google.android.exoplayer2.ui,com.google.android.exoplayer2.decoder,com.google.android.exoplayer2.extractor,com.google.android.exoplayer2.ext.okhttp,com.google.android.exoplayer2.audio,com.google.android.exoplayer2.video,com.google.android.exoplayer2.database,com.google.android.exoplayer2.mediasession,com.google.android.exoplayer2.container,com.google.android.exoplayer2.datasource,com.google.android.exoplayer2.exoplayer,com.google.android.exoplayer2.common" />
+<application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
@@ -97,5 +99,14 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/cast_accessibility" />
         </service>
-    </application>
+        <activity
+            android:name=".cast.CastPlayerActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />        <activity
+            android:name=".cast.WebCastPlayerActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />    </application>
 </manifest>

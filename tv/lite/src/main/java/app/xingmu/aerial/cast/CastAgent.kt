@@ -60,6 +60,8 @@ object CastAgent {
     /** Refreshed by a cheap adbd probe; drives control_mode / capture_mode reporting. */
     @Volatile private var adbReady = false
     @Volatile private var foregroundPackage = ""
+    /** Player page URL pushed by the phone; the DLNA path prefers it for HLS streams. */
+    @Volatile var lastPlayerUrl: String = ""
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -260,6 +262,7 @@ object CastAgent {
 
     /** One remote command. Everything the launcher cannot really do is reported as failed. */
     private fun executeCommand(type: String, payload: JSONObject): Pair<Boolean, String> = when (type) {
+        "webplayer" -> openWebPlayer(payload)
         "app" -> if (payload.optString("action") == "foreground") bringSelfToFront() else launchApp(payload)
         "key" -> sendKey(payload)
         else -> false to "Aerial Lite 暂不支持该指令：$type"
@@ -316,6 +319,47 @@ object CastAgent {
         else -> 0
     }
 
+    /**
+     * Opens the backend's hosted player page. The phone creates the player session (only a user can)
+     * and sends the resulting URL here, so the TV never needs to know the ticket flow.
+     */
+    /**
+     * Asks the backend for a hosted player page for [stream]. The TV authenticates with its device
+     * credentials, so no phone has to be in the loop, and returns "" when anything fails.
+     */
+    fun hostedPlayerPage(stream: String): String {
+        if (stream.isEmpty() || CastConfig.backendUrl.isEmpty()) return ""
+        return runCatching {
+            val body = JSONObject()
+                .put("url", stream)
+                .put("media_type", if (stream.contains("m3u8", true)) "hls" else "video")
+                .put("title", CastConfig.deviceName)
+            val request = Request.Builder()
+                .url(CastConfig.backendUrl.trimEnd('/') + "/api/device/player/sessions")
+                .addHeader("X-Device-ID", CastConfig.deviceId)
+                .addHeader("X-Device-Token", CastConfig.deviceToken)
+                .post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), body.toString()))
+                .build()
+            http().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return ""
+                val json = JSONObject(response.body()?.string().orEmpty())
+                json.optString("player_url")
+            }
+        }.getOrDefault("")
+    }
+    private fun openWebPlayer(payload: JSONObject): Pair<Boolean, String> {
+        val context = appContext ?: return false to "应用上下文缺失"
+        val page = payload.optString("player_url").ifEmpty { payload.optString("url") }
+        if (page.isEmpty()) return false to "缺少播放页地址"
+        lastPlayerUrl = page
+        val intent = Intent(context, WebCastPlayerActivity::class.java).apply {
+            putExtra(WebCastPlayerActivity.EXTRA_URL, page)
+            putExtra(WebCastPlayerActivity.EXTRA_STREAM, payload.optString("stream_url"))
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val started = runCatching { context.startActivity(intent); true }.getOrDefault(false)
+        return if (started) true to "已打开播放页" else false to "打开播放页失败"
+    }
     /** The phone's 唤醒 button: bring 星幕 itself back to the foreground, whatever is playing. */
     private fun bringSelfToFront(): Pair<Boolean, String> {
         val context = appContext ?: return false to "应用上下文缺失"

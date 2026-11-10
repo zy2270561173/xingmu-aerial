@@ -193,23 +193,23 @@ class DlnaRenderer(private val context: Context) {
                 soap(action, "")
             }
             "Play" -> {
-                val launched = open(currentUri)
+                val launched = playInApp(currentUri)
                 transportState = if (launched) "PLAYING" else "STOPPED"
                 soap(action, "")
             }
             "Pause" -> {
                 transportState = "PAUSED_PLAYBACK"
-                sendKey(KEYCODE_MEDIA_PAUSE)
+                CastPlayer.pause()
                 soap(action, "")
             }
             "Stop" -> {
                 transportState = "STOPPED"
-                sendKey(KEYCODE_MEDIA_STOP)
+                CastPlayer.stop()
                 soap(action, "")
             }
             "GetTransportInfo" -> soap(
                 action,
-                "<CurrentTransportState>$transportState</CurrentTransportState>" +
+                "<CurrentTransportState>" + if (CastPlayer.state == CastPlayer.State.PLAYING) "PLAYING" else transportState + "</CurrentTransportState>" +
                     "<CurrentTransportStatus>OK</CurrentTransportStatus><CurrentSpeed>1</CurrentSpeed>",
             )
             "GetMediaInfo" -> soap(
@@ -220,9 +220,10 @@ class DlnaRenderer(private val context: Context) {
             )
             "GetPositionInfo" -> soap(
                 action,
-                "<Track>1</Track><TrackDuration>00:00:00</TrackDuration>" +
+                "<Track>1</Track><TrackDuration>" + CastPlayer.hms(CastPlayer.durationMs) + "</TrackDuration>" +
                     "<TrackURI>" + xmlEscape(currentUri) + "</TrackURI>" +
-                    "<RelTime>00:00:00</RelTime><AbsTime>00:00:00</AbsTime><RelCount>0</RelCount><AbsCount>0</AbsCount>",
+                    "<RelTime>" + CastPlayer.hms(CastPlayer.positionMs) + "</RelTime><AbsTime>" +
+                    CastPlayer.hms(CastPlayer.positionMs) + "</AbsTime><RelCount>0</RelCount><AbsCount>0</AbsCount>",
             )
             else -> NanoHTTPD.newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR, "text/xml; charset=utf-8", fault(action)
@@ -230,6 +231,38 @@ class DlnaRenderer(private val context: Context) {
         }
     }
 
+    /** Starts 星幕's own player; the fallback is the system player when the activity is missing. */
+    private fun playInApp(uri: String): Boolean {
+        if (uri.isEmpty()) return false
+        // HLS on a 4.4 box only works through the backend's hls.js page; everything else uses the
+        // native ExoPlayer screen.
+        // HLS goes through the backend relay first: the TV cannot reach these CDNs directly (the
+        // 4.4 box got CONNECTION_FAILED), while the backend can.
+        if (uri.contains("m3u8", ignoreCase = true)) {
+            val page = CastAgent.lastPlayerUrl.ifEmpty { CastAgent.hostedPlayerPage(uri) }
+            if (page.isNotEmpty() && playWeb(page, uri)) return true
+        }
+        val intent = Intent(context, CastPlayerActivity::class.java).apply {
+            putExtra(CastPlayerActivity.EXTRA_URL, uri)
+            putExtra(CastPlayerActivity.EXTRA_TITLE, currentTitle())
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val started = runCatching { context.startActivity(intent); true }.getOrDefault(false)
+        return started || open(uri)
+    }
+
+    private fun playWeb(page: String, stream: String): Boolean {
+        val intent = Intent(context, WebCastPlayerActivity::class.java).apply {
+            putExtra(WebCastPlayerActivity.EXTRA_URL, page)
+            putExtra(WebCastPlayerActivity.EXTRA_STREAM, stream)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { context.startActivity(intent); true }.getOrDefault(false)
+    }
+    private fun currentTitle(): String {
+        val match = Regex("<dc:title>(.*?)</dc:title>", RegexOption.DOT_MATCHES_ALL).find(currentMetadata)
+        return xmlUnescape(match?.groupValues?.get(1).orEmpty())
+    }
     /** Hands the URL to the TV's own player, exactly like a cast target would. */
     private fun open(uri: String): Boolean {
         if (uri.isEmpty()) return false

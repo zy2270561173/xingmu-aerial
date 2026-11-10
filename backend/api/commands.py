@@ -71,6 +71,27 @@ async def send_command(
         request.app.state.db, device, payload.type, payload.payload, user["id"]
     )
     await dispatch_command(request.app, command)
+    # D-pad keys cannot be injected by the TV app on 4.x (INJECT_EVENTS is system-only and adbd
+    # refuses app connections). The server already has an authorised adb link, so press it here.
+    if payload.type == "key":
+        try:
+            from adb_keys import inject_key
+
+            key_name = str(payload.payload.get("key") or "")
+            serial = f"{device.get('lan_ip') or ''}:{device.get('adb_port') or 5555}"
+            ok, detail = inject_key(serial, key_name)
+            if ok:
+                # The key is already pressed, so the command is done: report it before the device
+                # answers (its own injection attempt fails on 4.x and would show up as an error).
+                import time as _time
+
+                request.app.state.db.execute(
+                    "UPDATE commands SET status = 'completed', result_message = ?, completed_at = ?"
+                    " WHERE id = ? AND status IN ('pending', 'delivered')",
+                    (detail, int(_time.time()), command["id"]),
+                )
+        except Exception:  # never break command delivery because the shortcut failed
+            pass
     return command
 
 

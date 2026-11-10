@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 DeviceStatus = Literal["pending", "approved", "rejected", "revoked"]
-CommandType = Literal["key", "media", "install", "switch", "snapshot", "p2p", "settings", "app", "power"]
+CommandType = Literal["key", "media", "install", "switch", "snapshot", "p2p", "settings", "app", "power", "webplayer"]
 SignalKind = Literal["offer", "answer", "ice", "ready", "failed"]
 ReleasePlatform = Literal["tv", "mobile"]
 VipTagStyle = Literal["sky", "mint", "gold", "rose", "violet"]

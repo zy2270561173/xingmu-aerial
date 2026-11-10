@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
-from dependencies import get_current_user
+from dependencies import get_authenticated_device, get_current_user
 from access import require_entitlement
 from models import PlayerSessionRequest
 
@@ -268,7 +268,7 @@ def _rewrite_hls_playlist(playlist: str, base_url: str, ticket: str, store) -> s
 
 def _render_player(media_url: str, media_type: str, title: str) -> HTMLResponse:
     config_json = json.dumps(
-        {"url": media_url, "mediaType": media_type, "title": title or "星投屏"},
+        {"url": media_url, "mediaType": media_type, "title": title or "星投屏", "video": {"playsinline": True, "autoplay": True, "preload": "auto"}},
         ensure_ascii=False,
         separators=(",", ":"),
     ).replace("</", "<\\/")
@@ -386,3 +386,35 @@ async def _ensure_public_http_url(value: str) -> None:
                 status.HTTP_400_BAD_REQUEST,
                 "private or local upstream media addresses are not allowed",
             )
+
+@router.post("/api/device/player/sessions")
+async def create_device_player_session(
+    payload: PlayerSessionRequest,
+    request: Request,
+    device: dict = Depends(get_authenticated_device),
+) -> dict:
+    """The TV asks for its own player page. Device credentials, and LAN is enough.
+
+    The phone version requires a signed-in user and remote_cast/relay_access; a TV casting from the
+    same LAN should not need a cloud entitlement, hence local_allowed=True.
+    """
+    owner = request.app.state.db.fetch_one(
+        "SELECT * FROM users WHERE id = ?", (device["owner_user_id"],)
+    )
+    if owner is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "device has no owner")
+    require_entitlement(owner, "remote_cast", local_allowed=True)
+    ticket, session = request.app.state.player_sessions.create(
+        source_url=str(payload.url),
+        media_type=payload.media_type,
+        title=payload.title,
+        owner_user_id=owner["id"],
+    )
+    base_url = request.app.state.settings.public_base_url or str(request.base_url).rstrip("/")
+    return {
+        "ticket": ticket,
+        "player_path": f"/player/{quote(ticket, safe='')}",
+        "player_url": f"{base_url}/player/{quote(ticket, safe='')}",
+        "engine": "dplayer",
+        "expires_at": session.expires_at,
+    }

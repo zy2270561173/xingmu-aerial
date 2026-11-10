@@ -140,6 +140,10 @@ dependencies {
     implementation("com.google.zxing:core:3.3.0")
     // The last OkHttp that runs on Android 4.x; the platform there has no WebSocket client.
     implementation("com.squareup.okhttp3:okhttp:3.12.13")
+    // HLS and adaptive streams on 4.x TVs: the platform player cannot do it, ExoPlayer can.
+    implementation("com.google.android.exoplayer:exoplayer-core:2.18.7")
+    implementation("com.google.android.exoplayer:exoplayer-hls:2.18.7")
+    implementation("com.google.android.exoplayer:exoplayer-ui:2.18.7")
     testImplementation("junit:junit:4.13.2")
 }
 

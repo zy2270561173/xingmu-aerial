@@ -97,6 +97,12 @@ object CastConfig {
         return "lite-" + if (tail.isEmpty()) System.currentTimeMillis().toString(16) else tail
     }
 
+    /** Backend web player page for a stream; empty when no backend is configured. */
+    fun webPlayerUrl(stream: String): String {
+        if (backendUrl.isEmpty()) return ""
+        // Hosted player pages are ticket-based and created by the phone; nothing to compose here.
+        return ""
+    }
     private fun defaultDeviceName(): String {
         val model = android.os.Build.MODEL.orEmpty().trim()
         return if (model.isEmpty()) "客厅电视" else "星幕-$model"
