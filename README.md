@@ -33,6 +33,23 @@ cd web && npm install && npm run dev
 
 电视端的后端地址可用 `-PcastBackendUrl=http://<host>:18000` 编进首次引导。
 
+## 截图
+
+| 电视端（Android 4.4.2 真机） | 电视端·关于本机（Android 15） |
+|---|---|
+| ![4.4 桌面](docs/screenshots/tv-4.4-home.jpg) | ![关于本机](docs/screenshots/tv-android15-about.jpg) |
+
+| 手机·登录 | 手机·设备 |
+|---|---|
+| ![登录](docs/screenshots/phone-login.jpg) | ![设备](docs/screenshots/phone-devices.jpg) |
+
+| 手机·遥控投屏 | 手机·我的 |
+|---|---|
+| ![投屏](docs/screenshots/phone-cast.jpg) | ![我的](docs/screenshots/phone-me.jpg) |
+
+更多真机记录见 `docs/VERIFY-4.4.md`、`docs/CAST.md`、`docs/MOBILE-UI.md`。
+
+## 状态
 ## 来源：哪些是自制的，哪些是派生的
 
 | 部分 | 来源 | 说明 |

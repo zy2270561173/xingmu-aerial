@@ -67,5 +67,6 @@ npm run dev        # 本地开发
 | 手机端 `assembleDebug` | `app.xingmu.remote` / `星幕遥控` / versionCode 28 |
 | 电视端真机（Android 15，`192.168.31.112`） | 注册→审批→在线，命令、遥控、P2P、DLNA、应用清单上报、关于本机均通过 |
 | 手机端真机（Android 16，vivo V2302A） | 登录→设备→遥控→投屏→应用→我的，六页截图确认 |
+| Android 4.4.2 真机（M08 / Hi3798MV200） | 安装、桌面、注册、认证、心跳、打开应用、按键、应用清单、截图、DLNA 全部通过（`docs/VERIFY-4.4.md`） |
 
-未验证：**Android 4.4 实机**（只有 Lint 级 API 检查与静态加固）。
+未验证：开机自启、设为默认桌面、4.4 上的 P2P 会合。
