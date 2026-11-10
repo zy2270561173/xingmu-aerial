@@ -90,6 +90,28 @@ public final class LegacyAdbClient {
         return keyCode > 0 && shell(context, port, "input keyevent " + keyCode, 64 * 1024).success;
     }
 
+    /** Starts a component through adbd: the reliable way to wake a TV app from the background. */
+    public static boolean amStart(Context context, int port, String component) {
+        if (component == null || !component.matches("[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+")) return false;
+        ShellResult result = shell(context, port, "am start -n " + component, 8 * 1024);
+        return result.success && !result.output.contains("Error");
+    }
+
+    /** Foreground package as adbd sees it, or "" when the query fails. */
+    public static String currentPackage(Context context, int port) {
+        ShellResult result = shell(context, port,
+                "dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp'", 8 * 1024);
+        if (!result.success) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("([a-z][a-z0-9_]+(?:\\.[a-z0-9_]+)+)/")
+                .matcher(result.output);
+        return matcher.find() ? matcher.group(1) : "";
+    }
+    /** Cheap liveness probe: true when adbd answers a trivial shell command. */
+    public static boolean probe(Context context, int port) {
+        ShellResult result = shell(context, port, "echo starlight", 1024, 4000);
+        return result.success && result.output.contains("starlight");
+    }
     public static boolean launchPackage(Context context, int port, String packageName) {
         if (packageName == null || !packageName.matches("[A-Za-z0-9_.-]{1,255}")) return false;
         ShellResult result = shell(context, port,

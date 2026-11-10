@@ -57,6 +57,9 @@ object CastAgent {
     private val captureWorker = Executors.newSingleThreadExecutor()
     private var previewScheduler: ScheduledExecutorService? = null
     private var p2p: P2pChannel? = null
+    /** Refreshed by a cheap adbd probe; drives control_mode / capture_mode reporting. */
+    @Volatile private var adbReady = false
+    @Volatile private var foregroundPackage = ""
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -257,7 +260,7 @@ object CastAgent {
 
     /** One remote command. Everything the launcher cannot really do is reported as failed. */
     private fun executeCommand(type: String, payload: JSONObject): Pair<Boolean, String> = when (type) {
-        "app" -> launchApp(payload)
+        "app" -> if (payload.optString("action") == "foreground") bringSelfToFront() else launchApp(payload)
         "key" -> sendKey(payload)
         else -> false to "Aerial Lite 暂不支持该指令：$type"
     }
@@ -313,6 +316,24 @@ object CastAgent {
         else -> 0
     }
 
+    /** The phone's 唤醒 button: bring 星幕 itself back to the foreground, whatever is playing. */
+    private fun bringSelfToFront(): Pair<Boolean, String> {
+        val context = appContext ?: return false to "应用上下文缺失"
+        val activity = runCatching { Class.forName("app.xingmu.aerial.HomeActivity") }.getOrNull()
+            ?: return false to "找不到桌面 Activity"
+        val started = runCatching {
+            context.startActivity(
+                Intent(context, activity).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            )
+            true
+        }.getOrDefault(false)
+        if (started) return true to "已在电视上唤起星幕"
+        // Background startActivity is dropped silently on newer Android; adbd always works.
+        val component = context.packageName + "/app.xingmu.aerial.HomeActivity"
+        val viaAdb = runCatching { LegacyAdbClient.amStart(context, CastConfig.adbPort, component) }
+            .getOrDefault(false)
+        return if (viaAdb) true to "已在电视上唤起星幕（ADB）" else false to "唤起失败"
+    }
     private fun launchApp(payload: JSONObject): Pair<Boolean, String> {
         val action = payload.optString("action", "launch")
         if (action != "launch") return false to "暂不支持的 app 操作：$action"
@@ -386,26 +407,52 @@ object CastAgent {
     private fun bounded(value: Int, minimum: Int, maximum: Int): Int =
         value.coerceIn(minimum, maximum)
 
-    private fun startHeartbeat(ws: WebSocket) {        heartbeat?.shutdownNow()
+    private fun startHeartbeat(ws: WebSocket) {
+        heartbeat?.shutdownNow()
         val scheduler = Executors.newSingleThreadScheduledExecutor()
         heartbeat = scheduler
         scheduler.scheduleWithFixedDelay({
             if (!running.get()) return@scheduleWithFixedDelay
             runCatching {
-                ws.send(
-                    JSONObject().put("type", "heartbeat")
-                        .put("device_id", CastConfig.deviceId)
-                        .put("ts", nowSeconds())
-                        .put("data", JSONObject()
-                            .put("name", CastConfig.deviceName)
-                            .put("model", android.os.Build.MODEL ?: "")
-                            .put("app_version", BuildConfigName())
-                            .put("lan_ip", localIpv4())
-                            .put("udp_p2p_transport", "ready")
-                            .put("metadata", JSONObject().put("udp_p2p_transport", "ready").put("nat_type", "lan")))
-                        .toString()
-                )
+                val metadata = JSONObject()
+                    .put("udp_p2p_transport", "ready")
+                    .put("nat_type", "lan")
+                    .put("network_environment", "lan")
+                    // The phone shows 遥控/采集 readiness from these fields.
+                    .put("control_mode", when {
+                        CastA11yService.connected -> "accessibility"
+                        adbReady -> "adb"
+                        else -> ""
+                    })
+                    .put("capture_mode", if (adbReady) "adb" else "")
+                val data = JSONObject()
+                    .put("name", CastConfig.deviceName)
+                    .put("model", android.os.Build.MODEL ?: "")
+                    .put("app_version", BuildConfigName())
+                    .put("lan_ip", localIpv4())
+                    .put("udp_p2p_transport", "ready")
+                    .put("metadata", metadata)
+                    .put("current_activity", foregroundPackage)
+                val message = JSONObject()
+                    .put("type", "heartbeat")
+                    .put("device_id", CastConfig.deviceId)
+                    .put("ts", nowSeconds())
+                    .put("data", data)
+                ws.send(message.toString())
             }.onFailure { publish(State.Error, friendly(it)) }
+            // Probe adbd twice a minute: it is the fallback control and capture path on TVs without
+            // accessibility, so the reported modes have to follow the real state.
+            if (nowSeconds() % 30L < HEARTBEAT_SECONDS) {
+                captureWorker.execute {
+                    val context = appContext ?: return@execute
+                    adbReady = runCatching { LegacyAdbClient.probe(context, CastConfig.adbPort) }.getOrDefault(false)
+                    foregroundPackage = if (adbReady) {
+                        runCatching { LegacyAdbClient.currentPackage(context, CastConfig.adbPort) }.getOrDefault("")
+                    } else {
+                        ""
+                    }
+                }
+            }
         }, 0L, HEARTBEAT_SECONDS, TimeUnit.SECONDS)
     }
 

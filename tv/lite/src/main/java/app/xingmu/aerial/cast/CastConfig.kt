@@ -99,6 +99,6 @@ object CastConfig {
 
     private fun defaultDeviceName(): String {
         val model = android.os.Build.MODEL.orEmpty().trim()
-        return if (model.isEmpty()) "客厅电视" else "星投屏-$model"
+        return if (model.isEmpty()) "客厅电视" else "星幕-$model"
     }
 }

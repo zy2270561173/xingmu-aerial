@@ -40,6 +40,7 @@ class P2pChannel(private val context: Context) {
         this.rendezvous = InetSocketAddress(host, port)
         this.expiresAt = if (expiresAt > 0) expiresAt else System.currentTimeMillis() / 1000L + 120L
         running.set(true)
+        Log.i(TAG, "start host=" + host + " port=" + port + " sid=" + sessionId + " expires=" + expiresAt)
         val worker = Thread({ loop() }, "aerial-cast-p2p")
         worker.isDaemon = true
         thread = worker
@@ -48,11 +49,15 @@ class P2pChannel(private val context: Context) {
 
     fun stop() {
         running.set(false)
+        val worker = thread
+        thread = null
         runCatching { socket?.close() }
+        worker?.interrupt()
+        // Wait for the loop to unwind before a restart reuses the field: the old loop's finally
+        // would otherwise clear the socket the new loop just installed.
+        runCatching { worker?.join(400) }
         socket = null
         peer = null
-        thread?.interrupt()
-        thread = null
     }
 
     private fun loop() {
@@ -73,10 +78,11 @@ class P2pChannel(private val context: Context) {
                     if (now >= nextHello) {
                         val hello = JSONObject().put("type", "hello").put("session_id", sessionId)
                             .put("role", "device").put("token", token)
-                        active.send(
-                            DatagramPacket(hello.toString().toByteArray(), hello.toString().toByteArray().size,
-                                rendezvous?.address, rendezvous?.port ?: 0)
-                        )
+                        runCatching {
+                            val bytes = hello.toString().toByteArray()
+                            active.send(DatagramPacket(bytes, bytes.size, rendezvous?.address, rendezvous?.port ?: 0))
+                        }.onSuccess { Log.i(TAG, "hello sent") }
+                            .onFailure { Log.w(TAG, "hello failed: " + it.javaClass.simpleName + " / " + it.message + " addr=" + rendezvous?.address) }
                         nextHello = now + 1000
                     }
                 } else {
@@ -127,10 +133,13 @@ class P2pChannel(private val context: Context) {
                 }
             }
         } catch (error: Exception) {
-            Log.w(TAG, "P2P loop: " + error.javaClass.simpleName)
+            Log.w(TAG, "P2P loop: " + error.javaClass.simpleName + " / " + error.message)
         } finally {
             runCatching { active?.close() }
-            socket = null
+            // Only clear the field if it still points at this loop's socket: a restart starts the
+            // new loop before the old one unwinds, and nulling unconditionally killed the new socket
+            // (the 4.4 box then logged "P2P loop: SocketException" and never joined the rendezvous).
+            if (socket === active) socket = null
         }
     }
 
