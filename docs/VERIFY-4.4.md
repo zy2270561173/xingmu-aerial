@@ -38,8 +38,33 @@
 4. 焦点信息字段是 `mFocusedActivity`（不是新系统的 `mCurrentFocus` 唯一来源），
    `dumpsys window | grep mCurrentFocus` 在 4.4 上也可能命中。
 
-## 尚未覆盖
+## 默认桌面
 
-- 开机自启（4.4 上 `BOOT_COMPLETED` 是否被固件拦截未验证）；
-- 设为默认桌面（会替换用户现有桌面，需用户明确同意后再试）；
-- P2P UDP 直连（4.4 上未单独跑会合流程，遥控走的是后端转发）。
+4.4 没有 `cmd` 命令，`pm set-home-activity` 也不存在，只能用 Home 键触发的选择器：
+
+```
+adb shell input keyevent KEYCODE_HOME     # 弹出「选择主屏幕应用」
+# 选中「星幕 Aerial」→ 点「始终」
+```
+
+之后按 HOME 直接进 `app.xingmu.aerial.cast/HomeActivity`，不再弹选择器。官方 Aerial Lite
+仍在设备上（同一个选择器里列着），随时可以换回去。
+
+## 开机自启
+
+`adb reboot` 后不再依赖 adb：约 **75 秒**后后端显示该设备 `online=true`，心跳年龄 5 秒。
+这台电视上星幕同时是默认桌面，所以「开机进星幕并上线」成立；`BOOT_COMPLETED` 接收器本身
+是否被固件拦下，在已是默认桌面的情况下无法单独区分。
+
+## P2P 直连：未通过
+
+- 会话协商正常：`selected_mode=udp_jpeg`、`direct_transport_ready`，`device_notified=true`；
+- 电视端确实收到了 `p2p_start`，并按会话 id 向会合点发了 hello，日志出现
+  `P2P peer established`（拿到的对端是控制端地址）；
+- 但控制端（PC 上的探测脚本）一直只收到 `{"type":"waiting"}`，收不到 `peer`，
+  因此无法回 `ready`、也发不出按键。
+
+已排除：会话 id 两侧一致、电视端 UDP 发送成功（`hello sent`）、同一脚本对 Android 15
+设备可以正常配对。怀疑会合点的配对回执（`reverse peer`）在「设备与控制端几乎同时注册」
+时丢掉了一侧，需要对 `p2p_rendezvous.py` 的 `store.register` 加日志进一步定位。
+**结论：4.4 上的遥控目前走后端转发，P2P 直连未打通。**
