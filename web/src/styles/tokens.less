@@ -1,0 +1,84 @@
+/*
+ * Aerial design tokens — the single source shared with the TV app.
+ * Values come from aerial-tv/app/src/main/java/app/orchard/tv/ui/theme/Theme.kt (Palette, Type,
+ * Motion). Scoped to html[data-theme="aerial"] on purpose: animal-island-ui-vue injects its own
+ * :root at runtime, after this stylesheet, so a plain :root block would lose the cascade in the
+ * production build (audit D1). Attribute + class beats :root on specificity either way.
+ */
+
+html[data-theme="aerial"] {
+  color-scheme: dark;
+
+  /* Palette */
+  --aerial-bg: #000000;
+  --aerial-label: #ffffff;
+  --aerial-label-2: rgba(235, 235, 245, 0.6);
+  --aerial-label-3: rgba(235, 235, 245, 0.3);
+  --aerial-glass: rgba(32, 32, 34, 0.9);
+  --aerial-glass-soft: rgba(28, 28, 30, 0.72);
+  --aerial-fill: rgba(120, 120, 128, 0.18);
+  --aerial-fill-strong: rgba(120, 120, 128, 0.32);
+  --aerial-hairline: rgba(255, 255, 255, 0.1);
+  --aerial-green: #30d158;
+  --aerial-orange: #ff9f0a;
+  --aerial-red: #ff453a;
+  --aerial-focus: #f5f5f7;
+  --aerial-on-focus: #1d1d1f;
+
+  /* Radii: tile 12, floating panel 22-24, settings sheet 28, pill 50% */
+  --aerial-radius-tile: 12px;
+  --aerial-radius-panel: 24px;
+  --aerial-radius-sheet: 28px;
+  --aerial-radius-pill: 999px;
+
+  /* Spacing (4pt base) */
+  --aerial-space-1: 4px;
+  --aerial-space-2: 8px;
+  --aerial-space-3: 12px;
+  --aerial-space-4: 16px;
+  --aerial-space-5: 22px;
+  --aerial-space-6: 28px;
+  --aerial-space-7: 40px;
+
+  /* Type ramp (Aerial 960x540 canvas; 1dp ~ 2 CSS px at 1080p) */
+  --aerial-font: Inter, -apple-system, "Segoe UI", Roboto, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --aerial-text-caption: 11px;
+  --aerial-text-callout: 13px;
+  --aerial-text-body: 14px;
+  --aerial-text-headline: 15px;
+  --aerial-text-title: 19px;
+  --aerial-text-largetitle: 26px;
+  --aerial-text-display: 34px;
+
+  /* Motion */
+  --aerial-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --aerial-ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
+  --aerial-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --aerial-duration-fast: 180ms;
+  --aerial-duration-panel: 300ms;
+
+  /* Shadow is only a hint: Aerial separates surfaces with hairlines, not heavy shadows. */
+  --aerial-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+
+  /* Remap the component kit onto the same palette. */
+  --animal-primary-color: #0a84ff;
+  --animal-primary-color-hover: #3f9cff;
+  --animal-primary-color-active: #0060df;
+  --animal-primary-color-bg: rgba(10, 132, 255, 0.16);
+  --animal-success-color: #30d158;
+  --animal-warning-color: #ff9f0a;
+  --animal-error-color: #ff453a;
+  --animal-text-color: #ffffff;
+  --animal-text-color-secondary: rgba(235, 235, 245, 0.6);
+  --animal-text-color-disabled: rgba(235, 235, 245, 0.3);
+  --animal-border-color: rgba(255, 255, 255, 0.1);
+  --animal-border-color-hover: rgba(255, 255, 255, 0.22);
+  --animal-bg-color: #000000;
+  --animal-bg-color-secondary: rgba(32, 32, 34, 0.9);
+  --animal-bg-color-disabled: rgba(120, 120, 128, 0.18);
+  --animal-border-radius-sm: 10px;
+  --animal-border-radius-base: 14px;
+  --animal-border-radius-lg: 20px;
+  --animal-font-family: var(--aerial-font);
+  --animal-shadow-base: var(--aerial-shadow);
+}

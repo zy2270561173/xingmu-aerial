@@ -1,0 +1,423 @@
+/*
+ * Aerial shell for the admin console.
+ * One prefix (html[data-theme="aerial"]) on every rule beats the scoped SFC styles (0,2,1) and the
+ * runtime-injected kit :root, so the whole console can be reskinned without touching view markup.
+ * Glass is a blurred translucent plate with a hairline rim; Aerial itself bakes its blur, the web
+ * can afford backdrop-filter but must degrade to a solid plate where it is unsupported.
+ */
+
+html[data-theme="aerial"] {
+  background: var(--aerial-bg);
+}
+
+html[data-theme="aerial"] body {
+  margin: 0;
+  color: var(--aerial-label);
+  font-family: var(--aerial-font);
+  background:
+    radial-gradient(1200px 700px at 18% -10%, rgba(40, 84, 140, 0.35), transparent 60%),
+    radial-gradient(900px 600px at 92% 0%, rgba(120, 40, 90, 0.22), transparent 55%),
+    #000;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- shell ---------- */
+
+html[data-theme="aerial"] .app-shell {
+  background: transparent;
+}
+
+html[data-theme="aerial"] .sidebar {
+  color: var(--aerial-label);
+  background: rgba(18, 18, 20, 0.72);
+  border-right: 1px solid var(--aerial-hairline);
+  backdrop-filter: blur(24px) saturate(140%);
+  padding: var(--aerial-space-5) var(--aerial-space-3);
+}
+
+html[data-theme="aerial"] .brand strong {
+  font-size: var(--aerial-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+html[data-theme="aerial"] .brand small,
+html[data-theme="aerial"] .account small {
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-caption);
+}
+
+html[data-theme="aerial"] .brand-mark {
+  color: var(--aerial-on-focus);
+  background: var(--aerial-focus);
+  border-radius: var(--aerial-radius-tile);
+}
+
+html[data-theme="aerial"] .nav-item {
+  min-height: 42px;
+  border-radius: var(--aerial-radius-tile);
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-body);
+  font-weight: 500;
+  transition: background var(--aerial-duration-fast) var(--aerial-ease-out),
+    color var(--aerial-duration-fast) var(--aerial-ease-out),
+    transform var(--aerial-duration-fast) var(--aerial-ease-out);
+}
+
+html[data-theme="aerial"] .nav-item:hover {
+  color: var(--aerial-label);
+  background: var(--aerial-fill);
+}
+
+/* tvOS focus: a near-white plate with dark content, never a blue system highlight. */
+html[data-theme="aerial"] .nav-item.router-link-active {
+  color: var(--aerial-on-focus);
+  background: var(--aerial-focus);
+  font-weight: 600;
+  transform: scale(1.02);
+}
+
+html[data-theme="aerial"] .sidebar-footer {
+  border-top: 1px solid var(--aerial-hairline);
+}
+
+html[data-theme="aerial"] .topbar {
+  height: 62px;
+  background: rgba(18, 18, 20, 0.55);
+  border-bottom: 1px solid var(--aerial-hairline);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+html[data-theme="aerial"] .system-state,
+html[data-theme="aerial"] .scope-label {
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-callout);
+}
+
+html[data-theme="aerial"] .status-indicator {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme="aerial"] .status-indicator.active {
+  background: var(--aerial-green);
+  box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.18);
+}
+
+html[data-theme="aerial"] .route-content {
+  padding: var(--aerial-space-6);
+}
+
+html[data-theme="aerial"] .page-header h1 {
+  font-size: var(--aerial-text-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+html[data-theme="aerial"] .page-header p {
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-callout);
+}
+
+html[data-theme="aerial"] .muted {
+  color: var(--aerial-label-2);
+}
+
+/* ---------- settings sheets ---------- */
+
+html[data-theme="aerial"] .settings-band {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: var(--aerial-space-6);
+  align-items: start;
+  margin-top: var(--aerial-space-4);
+  padding: var(--aerial-space-6);
+  border: 1px solid var(--aerial-hairline);
+  border-radius: var(--aerial-radius-sheet);
+  background: var(--aerial-glass-soft);
+  backdrop-filter: blur(28px) saturate(150%);
+  box-shadow: var(--aerial-shadow);
+}
+
+html[data-theme="aerial"] .settings-band > div:first-child h2 {
+  margin: 0;
+  font-size: var(--aerial-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+html[data-theme="aerial"] .settings-band > div:first-child p {
+  margin: 6px 0 0;
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-callout);
+  line-height: 1.5;
+}
+
+html[data-theme="aerial"] .settings-band .fields,
+html[data-theme="aerial"] .settings-band .system-grid {
+  min-width: 0;
+}
+
+/* Read-only facts read as Aerial rows: label left, value right, hairline between. */
+html[data-theme="aerial"] .system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0;
+}
+
+html[data-theme="aerial"] .system-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--aerial-space-4);
+  padding: 11px 0;
+  border-bottom: 1px solid var(--aerial-hairline);
+}
+
+html[data-theme="aerial"] .system-grid span {
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-callout);
+}
+
+html[data-theme="aerial"] .system-grid strong {
+  color: var(--aerial-label);
+  font-size: var(--aerial-text-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- form controls ---------- */
+
+html[data-theme="aerial"] .settings-band input,
+html[data-theme="aerial"] .settings-band textarea,
+html[data-theme="aerial"] .settings-band select {
+  width: 100%;
+  padding: 11px 14px;
+  color: var(--aerial-label);
+  font-size: var(--aerial-text-body);
+  background: var(--aerial-fill);
+  border: 1px solid transparent;
+  border-radius: var(--aerial-radius-tile);
+  transition: background var(--aerial-duration-fast) var(--aerial-ease-out),
+    border-color var(--aerial-duration-fast) var(--aerial-ease-out);
+}
+
+html[data-theme="aerial"] .settings-band input::placeholder,
+html[data-theme="aerial"] .settings-band textarea::placeholder {
+  color: var(--aerial-label-3);
+}
+
+html[data-theme="aerial"] .settings-band input:focus,
+html[data-theme="aerial"] .settings-band textarea:focus,
+html[data-theme="aerial"] .settings-band select:focus {
+  outline: none;
+  background: var(--aerial-fill-strong);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="aerial"] .settings-band label,
+html[data-theme="aerial"] .settings-band .muted {
+  color: var(--aerial-label-2);
+  font-size: var(--aerial-text-callout);
+}
+
+html[data-theme="aerial"] .settings-band button {
+  border-radius: var(--aerial-radius-pill);
+}
+
+html[data-theme="aerial"] .settings-band .payment-method {
+  padding: var(--aerial-space-3) var(--aerial-space-4);
+  border: 1px solid var(--aerial-hairline);
+  border-radius: var(--aerial-radius-panel);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ---------- tables and lists ---------- */
+
+html[data-theme="aerial"] .island-table {
+  color: var(--aerial-label);
+  background: var(--aerial-glass-soft);
+  border: 1px solid var(--aerial-hairline);
+  border-radius: var(--aerial-radius-panel);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+html[data-theme="aerial"] .island-table th {
+  color: var(--aerial-label-2);
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--aerial-hairline);
+  font-size: var(--aerial-text-caption);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+html[data-theme="aerial"] .island-table td {
+  border-bottom: 1px solid var(--aerial-hairline);
+  font-size: var(--aerial-text-callout);
+}
+
+html[data-theme="aerial"] .island-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="aerial"] .empty-band {
+  color: var(--aerial-label-2);
+  border-color: var(--aerial-hairline);
+}
+
+html[data-theme="aerial"] .status-line.online::before {
+  background: var(--aerial-green);
+}
+
+html[data-theme="aerial"] .toast-stack {
+  top: 74px;
+}
+
+/* ---------- per-view surfaces ----------
+ * The views were written against a light palette and hard-code borders and white cards in their
+ * scoped styles. Each rule below is scoped under html[data-theme=aerial] so it outranks the
+ * component-scoped rule (.class[data-v-x]) without touching the view files themselves.
+ */
+
+html[data-theme="aerial"] .login-page {
+  background: transparent;
+}
+
+html[data-theme="aerial"] .login-panel {
+  background: var(--aerial-glass-soft);
+  border-color: var(--aerial-hairline);
+  border-radius: var(--aerial-radius-sheet);
+  box-shadow: var(--aerial-shadow);
+  backdrop-filter: blur(28px) saturate(150%);
+}
+
+html[data-theme="aerial"] .login-mark {
+  background: var(--aerial-fill-strong);
+  color: var(--aerial-label);
+  border-radius: var(--aerial-radius-tile);
+}
+
+html[data-theme="aerial"] .route-content select,
+html[data-theme="aerial"] .route-content textarea,
+html[data-theme="aerial"] .route-content input:not([type="file"]):not([type="color"]):not([type="checkbox"]) {
+  background: var(--aerial-fill);
+  border: 1px solid var(--aerial-hairline);
+  border-radius: var(--aerial-radius-tile);
+  color: var(--aerial-label);
+}
+
+html[data-theme="aerial"] .device-card,
+html[data-theme="aerial"] .active-package,
+html[data-theme="aerial"] .plan-item,
+html[data-theme="aerial"] .media-state,
+html[data-theme="aerial"] .file-picker,
+html[data-theme="aerial"] .code-list button {
+  background: var(--aerial-glass-soft);
+  border-color: var(--aerial-hairline);
+  border-radius: var(--aerial-radius-panel);
+  color: var(--aerial-label);
+}
+
+html[data-theme="aerial"] .status-band,
+html[data-theme="aerial"] .account-bindings,
+html[data-theme="aerial"] .binding-row,
+html[data-theme="aerial"] .binding-list,
+html[data-theme="aerial"] .entitlements,
+html[data-theme="aerial"] .active-package-box,
+html[data-theme="aerial"] .plan-actions {
+  border-color: var(--aerial-hairline);
+}
+
+html[data-theme="aerial"] .binding-avatar {
+  background: var(--aerial-fill);
+  color: var(--aerial-label-2);
+}
+
+html[data-theme="aerial"] .grant-confirm {
+  background: rgba(48, 209, 88, 0.12);
+  border-left-color: var(--aerial-green);
+}
+
+html[data-theme="aerial"] .metrics div {
+  border-left-color: var(--aerial-fill-strong);
+}
+
+html[data-theme="aerial"] .delete-device {
+  background: var(--aerial-fill) !important;
+  border-color: var(--aerial-red) !important;
+  color: var(--aerial-red) !important;
+}
+
+html[data-theme="aerial"] .sales-tabs span {
+  background: var(--aerial-fill);
+  color: var(--aerial-label-2);
+}
+
+/* VIP badges keep their hue, but on a dark plate instead of a pastel one. */
+html[data-theme="aerial"] .vip-sky {
+  background: rgba(10, 132, 255, 0.18);
+  color: #8ec5ff;
+}
+
+html[data-theme="aerial"] .vip-mint {
+  background: rgba(48, 209, 88, 0.16);
+  color: #86e5a4;
+}
+
+html[data-theme="aerial"] .vip-gold {
+  background: rgba(255, 159, 10, 0.16);
+  color: #ffc76b;
+}
+
+html[data-theme="aerial"] .vip-rose {
+  background: rgba(255, 69, 58, 0.16);
+  color: #ff9a92;
+}
+
+html[data-theme="aerial"] .vip-violet {
+  background: rgba(122, 90, 248, 0.18);
+  color: #c0adff;
+}
+
+/* ---------- graceful degradation ---------- */
+
+@supports not (backdrop-filter: blur(1px)) {
+  html[data-theme="aerial"] .sidebar,
+  html[data-theme="aerial"] .topbar {
+    background: rgba(18, 18, 20, 0.96);
+  }
+
+  html[data-theme="aerial"] .settings-band,
+  html[data-theme="aerial"] .island-table {
+    background: var(--aerial-glass);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="aerial"] * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 820px) {
+  html[data-theme="aerial"] .settings-band {
+    grid-template-columns: 1fr;
+    gap: var(--aerial-space-4);
+    padding: var(--aerial-space-4);
+    border-radius: var(--aerial-radius-panel);
+  }
+
+  html[data-theme="aerial"] .route-content {
+    padding: var(--aerial-space-4);
+  }
+
+  html[data-theme="aerial"] .sidebar {
+    background: rgba(14, 14, 16, 0.94);
+    border-top: 1px solid var(--aerial-hairline);
+  }
+}

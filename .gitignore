@@ -1,0 +1,46 @@
+# Build outputs
+build/
+.gradle/
+.kotlin/
+.cxx/
+dist/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.run/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+*.db-journal
+*.sqlite3
+
+# Node
+node_modules/
+.npm/
+*.log
+
+# Secrets and local machine data
+.env
+.env.*
+!.env.example
+local/
+*.jks
+*.keystore
+local.properties
+*.pem
+*.p12
+
+# OS
+.DS_Store
+Thumbs.db
+*.whl

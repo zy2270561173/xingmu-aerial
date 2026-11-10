@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">星幕 Aerial</string>
+
+    <!-- The built-in 星投屏 agent row in Control Center. These belong to the launcher itself (not
+         copied from the full app), and the Chinese wording is the product's own, so they are kept
+         untranslated until the other four language packs are done. -->
+    <string name="cast_unconfigured" translatable="false">投屏 · 未配置后端</string>
+    <string name="cast_off" translatable="false">投屏 · 已停止</string>
+    <string name="cast_connecting" translatable="false">投屏 · 正在连接</string>
+    <string name="cast_pending" translatable="false">投屏 · 等待审核</string>
+    <string name="cast_online" translatable="false">投屏 · 已连接</string>
+    <string name="cast_error" translatable="false">投屏 · 连接异常</string>
+    <string name="cast_started" translatable="false">已启动投屏服务</string>
+    <string name="cast_stopped" translatable="false">已停止投屏服务</string>
+    <string name="cast_settings" translatable="false">投屏设置</string>
+    <string name="cast_action_start" translatable="false">启动投屏服务</string>
+    <string name="cast_action_stop" translatable="false">停止投屏服务</string>
+    <string name="cast_backend" translatable="false">后端地址</string>
+    <string name="cast_not_set" translatable="false">未设置</string>
+    <string name="cast_name" translatable="false">设备名</string>
+    <string name="cast_rebind" translatable="false">重新绑定设备</string>
+    <string name="cast_rebind_done" translatable="false">已清除旧身份，正在重新登记</string>
+    <string name="cast_device_id" translatable="false">设备 ID</string>
+    <string name="cast_edit" translatable="false">修改</string>
+    <string name="cast_a11y_label" translatable="false">星投屏遥控</string>
+    <string name="cast_a11y_desc" translatable="false">让手机遥控器可以发送返回、主页、最近任务和通知栏。本服务不读取屏幕内容。</string>
+    <string name="cast_a11y_on" translatable="false">遥控按键 · 已开启</string>
+    <string name="cast_a11y_off" translatable="false">开启遥控按键（无障碍） ›</string>
+    <string name="cast_a11y_unavailable" translatable="false">这台电视没有无障碍设置入口</string>
+    <string name="cast_adb_port" translatable="false">ADB 端口</string>
+    <string name="about_title" translatable="false">关于本机</string>
+    <string name="about_device" translatable="false">设备名</string>
+    <string name="about_model" translatable="false">型号</string>
+    <string name="about_system" translatable="false">系统</string>
+    <string name="about_ip" translatable="false">局域网 IP</string>
+    <string name="about_version" translatable="false">应用版本</string>
+    <string name="about_agent" translatable="false">投屏状态</string>
+    <string name="about_id" translatable="false">设备 ID</string>
+    <string name="about_backend" translatable="false">后端地址</string>
+    <string name="about_dlna" translatable="false">DLNA 端口</string>
+    <string name="about_adb" translatable="false">ADB 端口</string>    <string name="about_credit" translatable="false">原作 Aerial TV（pengchujin，MIT 许可）</string>
+    <string name="about_project" translatable="false">github.com/pengchujin/aerial-tv</string>
+    <string name="about_restyled" translatable="false">星幕重制版 · 合并星投屏电视端</string></resources>

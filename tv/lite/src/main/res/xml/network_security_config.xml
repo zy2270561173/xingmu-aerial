@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two plain-HTTP clients live in this app:
+     1. the system player fetches Apple's films from FilmProxy on 127.0.0.1;
+     2. the built-in 星投屏 agent talks to a self-hosted backend, which on a home LAN is usually
+        http://192.168.x.x:18000 (the reference deployment terminates TLS in front of it, but a
+        local one does not).
+     Android 4.x ignores this file; Android 9+ needs the base rule or OkHttp throws
+     UnknownServiceException (cleartext not permitted). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
