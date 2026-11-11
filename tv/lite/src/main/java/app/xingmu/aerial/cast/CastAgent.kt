@@ -62,6 +62,12 @@ object CastAgent {
     @Volatile private var foregroundPackage = ""
     /** Player page URL pushed by the phone; the DLNA path prefers it for HLS streams. */
     @Volatile var lastPlayerUrl: String = ""
+
+    /** Cached /api/vip/device/status payload, and the pairing code when the TV is still pending. */
+    @Volatile var accountStatus: JSONObject? = null
+    @Volatile var pairingCode: String = ""
+    @Volatile var pairingUri: String = ""
+    @Volatile var accountBusy = false
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -327,6 +333,47 @@ object CastAgent {
      * Asks the backend for a hosted player page for [stream]. The TV authenticates with its device
      * credentials, so no phone has to be in the loop, and returns "" when anything fails.
      */
+    /** Pulls account + membership for the Control Center page; off the socket thread. */
+    fun refreshAccount(onDone: () -> Unit = {}) {
+        if (accountBusy) return
+        accountBusy = true
+        captureWorker.execute {
+            runCatching {
+                val status = deviceCall("/api/vip/device/status", "GET")
+                accountStatus = status
+                if (status == null || status.isNull("owner")) {
+                    val pairing = deviceCall("/api/pairing/device", "POST")
+                    pairingCode = pairing?.optString("code").orEmpty()
+                    pairingUri = pairing?.optJSONObject("app_pairing")?.optString("uri").orEmpty()
+                        ?: pairing?.optString("uri").orEmpty()
+                } else {
+                    pairingCode = ""
+                    pairingUri = ""
+                }
+            }
+            accountBusy = false
+            Handler(Looper.getMainLooper()).post(onDone)
+        }
+    }
+
+    /** Device-authenticated call: returns the JSON body, or null on any failure. */
+    private fun deviceCall(path: String, method: String): JSONObject? {
+        if (CastConfig.backendUrl.isEmpty()) return null
+        return runCatching {
+            val url = CastConfig.backendUrl.trimEnd('/') + path
+            val builder = Request.Builder()
+                .url(url)
+                .addHeader("X-Device-ID", CastConfig.deviceId)
+                .addHeader("X-Device-Token", CastConfig.deviceToken)
+            if (method == "POST") {
+                builder.post(RequestBody.create(MediaType.parse("application/json"), "{}"))
+            }
+            http().newCall(builder.build()).execute().use { response ->
+                if (!response.isSuccessful) return null
+                JSONObject(response.body()?.string().orEmpty())
+            }
+        }.getOrNull()
+    }
     fun hostedPlayerPage(stream: String): String {
         if (stream.isEmpty() || CastConfig.backendUrl.isEmpty()) return ""
         return runCatching {
@@ -352,6 +399,17 @@ object CastAgent {
         val page = payload.optString("player_url").ifEmpty { payload.optString("url") }
         if (page.isEmpty()) return false to "缺少播放页地址"
         lastPlayerUrl = page
+        // The page's /media endpoint is a plain HTTP relay of the origin stream, which is exactly
+        // what ijkplayer wants: the TV cannot reach the CDN itself, and its WebView renders video
+        // black. WebView stays as the fallback.
+        val media = if (page.endsWith("/media")) page else page.trimEnd('/') + "/media"
+        val ijk = Intent(context, IjkCastPlayerActivity::class.java).apply {
+            putExtra(IjkCastPlayerActivity.EXTRA_URL, media)
+            putExtra(IjkCastPlayerActivity.EXTRA_TITLE, payload.optString("title"))
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val ijkStarted = runCatching { context.startActivity(ijk); true }.getOrDefault(false)
+        if (ijkStarted) return true to "已用 ijkplayer 播放"
         val intent = Intent(context, WebCastPlayerActivity::class.java).apply {
             putExtra(WebCastPlayerActivity.EXTRA_URL, page)
             putExtra(WebCastPlayerActivity.EXTRA_STREAM, payload.optString("stream_url"))

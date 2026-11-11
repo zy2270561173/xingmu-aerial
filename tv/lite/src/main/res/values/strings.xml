@@ -41,4 +41,14 @@
     <string name="about_dlna" translatable="false">DLNA 端口</string>
     <string name="about_adb" translatable="false">ADB 端口</string>    <string name="about_credit" translatable="false">原作 Aerial TV（pengchujin，MIT 许可）</string>
     <string name="about_project" translatable="false">github.com/pengchujin/aerial-tv</string>
-    <string name="about_restyled" translatable="false">星幕重制版 · 合并星投屏电视端</string></resources>
+    <string name="about_restyled" translatable="false">星幕重制版 · 合并星投屏电视端</string>    <string name="bind_title" translatable="false">账号与会员</string>
+    <string name="bind_account" translatable="false">账号</string>
+    <string name="bind_vip" translatable="false">会员</string>
+    <string name="bind_expires" translatable="false">到期</string>
+    <string name="bind_code" translatable="false">绑定码</string>
+    <string name="bind_unbound" translatable="false">未绑定</string>
+    <string name="bind_fetching" translatable="false">获取中…</string>
+    <string name="bind_loading" translatable="false">正在获取账号信息…</string>
+    <string name="bind_refresh" translatable="false">刷新账号信息</string>
+    <string name="bind_vip_on" translatable="false">会员已开通</string>
+    <string name="bind_vip_off" translatable="false">免费会员</string></resources>

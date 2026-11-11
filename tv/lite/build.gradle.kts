@@ -141,6 +141,11 @@ dependencies {
     // The last OkHttp that runs on Android 4.x; the platform there has no WebSocket client.
     implementation("com.squareup.okhttp3:okhttp:3.12.13")
     // HLS and adaptive streams on 4.x TVs: the platform player cannot do it, ExoPlayer can.
+    // ijkplayer: the engine that decodes HLS with the TV hardware codecs. The 4.4 box needs this:
+    // its WebView renders video black and the platform MediaPlayer cannot do HLS at all.
+    implementation("io.github.jdpxiaoming:ijkplayer-java:0.0.26")
+    implementation("io.github.jdpxiaoming:ijkplayer-armv7a:0.0.26")
+    implementation("io.github.jdpxiaoming:ijkplayer-arm64:0.0.26")
     implementation("com.google.android.exoplayer:exoplayer-core:2.18.7")
     implementation("com.google.android.exoplayer:exoplayer-hls:2.18.7")
     implementation("com.google.android.exoplayer:exoplayer-ui:2.18.7")

@@ -19,6 +19,9 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -110,7 +113,7 @@ private fun LinearLayout.add(v: View, w: Int = LinearLayout.LayoutParams.MATCH_P
 }
 
 /** Control Center's pages, as the full app's CcPage: inputs only where Lite can list them, no updates. */
-enum class CcPage { Main, Boot, Inputs, Cast, About }
+enum class CcPage { Main, Boot, Inputs, Cast, About, Bind }
 
 /**
  * Control Center, as the full app's ControlCenter main page: the time and date with the network,
@@ -150,6 +153,7 @@ class ControlCenter(
             CcPage.Inputs -> inputs()
             CcPage.Cast -> cast()
             CcPage.About -> about()
+            CcPage.Bind -> bind()
         }
         // In Kids mode on leaving it, as the full app.
         focusFirst(if (page == CcPage.Main && Kids.active && OutputDevice.showsVolume(context)) 1 else 0)
@@ -410,6 +414,15 @@ class ControlCenter(
         col.add(reset, top = 6f)
         row(reset)
 
+        // Account, membership and (while pending) the pairing code, all from device-auth endpoints.
+        val account = MenuRow(context, Glyph.Shield, context.getString(R.string.bind_title)).apply {
+            action = {
+                goTo(CcPage.Bind)
+                CastAgent.refreshAccount { goTo(CcPage.Bind) }
+            }
+        }
+        col.add(account, top = 10f)
+        row(account)
         // The same facts the phone shows for this TV, read-only: name, model, addresses, agent state.
         val about = MenuRow(context, Glyph.Gear, context.getString(R.string.about_title)).apply {
             action = { goTo(CcPage.About) }
@@ -421,6 +434,86 @@ class ControlCenter(
             .apply { setPadding(Ui.pxi(14f), 0, Ui.pxi(14f), 0) }, top = 8f)
     }
 
+    /**
+     * Account + membership for this TV, and a pairing code when it is still waiting to be bound.
+     * All data comes from device-authenticated endpoints, so nothing here needs a phone.
+     */
+    private fun bind() {
+        val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.bind_title)).apply {
+            action = { goTo(CcPage.Cast) }
+        }
+        col.addView(back)
+        row(back)
+
+        val status = CastAgent.accountStatus
+        if (status == null) {
+            col.add(context.label(context.getString(R.string.bind_loading), 12f, 500, Ui.SECONDARY)
+                .apply { setPadding(Ui.pxi(14f), Ui.pxi(12f), 0, 0) })
+        } else {
+            val owner = status.optJSONObject("owner")
+            if (owner == null) {
+                infoRow(R.string.bind_account, context.getString(R.string.bind_unbound))
+                if (CastAgent.pairingCode.isNotEmpty()) {
+                    infoRow(R.string.bind_code, CastAgent.pairingCode)
+                    qr(CastAgent.pairingUri.ifEmpty { CastAgent.pairingCode })
+                } else {
+                    infoRow(R.string.bind_code, context.getString(R.string.bind_fetching))
+                }
+            } else {
+                infoRow(R.string.bind_account, owner.optString("username"))
+                val vip = when {
+                    owner.optBoolean("vip_active") && owner.optString("membership_name").isNotEmpty() ->
+                        owner.optString("membership_name")
+                    owner.optBoolean("vip_active") -> context.getString(R.string.bind_vip_on)
+                    else -> context.getString(R.string.bind_vip_off)
+                }
+                infoRow(R.string.bind_vip, vip)
+                val expires = owner.optLong("vip_expires_at", 0L)
+                if (expires > 0L) {
+                    infoRow(
+                        R.string.bind_expires,
+                        java.text.DateFormat.getDateInstance().format(java.util.Date(expires * 1000)),
+                    )
+                }
+            }
+        }
+
+        val refresh = MenuRow(context, Glyph.Gear, context.getString(R.string.bind_refresh)).apply {
+            action = {
+                goTo(CcPage.Bind)
+                CastAgent.refreshAccount { goTo(CcPage.Bind) }
+            }
+        }
+        col.add(refresh, top = 12f)
+        row(refresh)
+    }
+
+    private fun infoRow(label: Int, value: String) {
+        col.add(context.label(context.getString(label), 11f, 500, Ui.SECONDARY)
+            .apply { setPadding(Ui.pxi(14f), Ui.pxi(8f), Ui.pxi(14f), 0) })
+        col.add(context.label(value, 14f, 500).apply { setPadding(Ui.pxi(14f), Ui.pxi(2f), Ui.pxi(14f), Ui.pxi(6f)) })
+    }
+
+    /** QR for the pairing URI, so the phone's 扫码绑定 can claim the TV. */
+    private fun qr(payload: String) {
+        if (payload.isEmpty()) return
+        val bitmap = runCatching {
+            val size = Ui.pxi(150f).coerceAtLeast(120)
+            val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, size, size)
+            val pixels = IntArray(size * size)
+            for (y in 0 until size) {
+                for (x in 0 until size) {
+                    pixels[y * size + x] = if (matrix[x, y]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+                }
+            }
+            Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
+        }.getOrNull() ?: return
+        val view = ImageView(context).apply {
+            setImageBitmap(bitmap)
+            setPadding(Ui.pxi(14f), Ui.pxi(6f), Ui.pxi(14f), Ui.pxi(6f))
+        }
+        col.addView(view)
+    }
     private fun about() {
         val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.about_title)).apply {
             action = { goTo(CcPage.Cast) }

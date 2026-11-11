@@ -240,7 +240,12 @@ class DlnaRenderer(private val context: Context) {
         // 4.4 box got CONNECTION_FAILED), while the backend can.
         if (uri.contains("m3u8", ignoreCase = true)) {
             val page = CastAgent.lastPlayerUrl.ifEmpty { CastAgent.hostedPlayerPage(uri) }
-            if (page.isNotEmpty() && playWeb(page, uri)) return true
+            // ijkplayer decodes the relayed stream with the TV hardware decoder; the WebView is the
+            // fallback because it renders video black on this box.
+            if (page.isNotEmpty()) {
+                if (playIjk(page.trimEnd('/') + "/media")) return true
+                if (playWeb(page, uri)) return true
+            }
         }
         val intent = Intent(context, CastPlayerActivity::class.java).apply {
             putExtra(CastPlayerActivity.EXTRA_URL, uri)
@@ -251,6 +256,14 @@ class DlnaRenderer(private val context: Context) {
         return started || open(uri)
     }
 
+    private fun playIjk(stream: String): Boolean {
+        val intent = Intent(context, IjkCastPlayerActivity::class.java).apply {
+            putExtra(IjkCastPlayerActivity.EXTRA_URL, stream)
+            putExtra(IjkCastPlayerActivity.EXTRA_TITLE, currentTitle())
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { context.startActivity(intent); true }.getOrDefault(false)
+    }
     private fun playWeb(page: String, stream: String): Boolean {
         val intent = Intent(context, WebCastPlayerActivity::class.java).apply {
             putExtra(WebCastPlayerActivity.EXTRA_URL, page)
