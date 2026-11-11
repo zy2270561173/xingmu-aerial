@@ -13,6 +13,7 @@ const auth = useAuthStore();
 const devices = useDeviceStore();
 let socket: ControlSocket | undefined;
 
+
 const showShell = computed(() => route.name !== 'login');
 const nav = computed(() => [
   { name: 'devices', label: '设备', icon: Monitor, show: true },
@@ -88,3 +89,23 @@ onBeforeUnmount(() => {
     </main>
   </div>
 </template>
+
+<style>
+/* 必应每日一图：后端 /api/wallpaper/bing 代理并缓存，避免 CORS 与客户端网络差异 */
+html,
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #0b0d0c;
+  background-image: linear-gradient(180deg, rgba(8, 10, 9, 0.45), rgba(8, 10, 9, 0.72)),
+    url("/api/wallpaper/bing");
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+}
+/* 让壁纸透出来：根容器与登录页原本自带不透明底色 */
+#app,
+.login-page {
+  background: transparent !important;
+}
+</style>

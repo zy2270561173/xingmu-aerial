@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 import time
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -94,6 +94,59 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         control_ws.router,
     ):
         app.include_router(router)
+
+    @app.get("/api/wallpaper/bing", include_in_schema=False)
+    async def bing_wallpaper() -> Response:
+        """必应每日一图：服务端下载并缓存，浏览器直接引用同源 URL，避免 CORS。
+
+        拿不到图片时返回 1x1 透明 PNG，前端保持纯色背景，不影响使用。
+        """
+        import datetime as _dt
+        from pathlib import Path as _Path
+
+        cache_dir = _Path(current_settings.data_dir) / "wallpaper"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        today = _dt.date.today().strftime("%Y%m%d")
+        cached = cache_dir / f"{today}.jpg"
+        if cached.is_file() and cached.stat().st_size > 1024:
+            return Response(
+                cached.read_bytes(),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                meta = await client.get(
+                    "https://cn.bing.com/HPImageArchive.aspx",
+                    params={"format": "js", "idx": "0", "n": "1", "mkt": "zh-CN"},
+                )
+                meta.raise_for_status()
+                urlbase = (meta.json().get("images") or [{}])[0].get("urlbase") or ""
+                if not urlbase:
+                    raise ValueError("no urlbase")
+                image = await client.get(f"https://cn.bing.com{urlbase}_1920x1080.jpg")
+                image.raise_for_status()
+                payload = image.content
+                if len(payload) < 1024:
+                    raise ValueError("image too small")
+                cached.write_bytes(payload)
+        except Exception:
+            return Response(
+                bytes.fromhex(
+                    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                    "1f15c4890000000a49444154789c6300010000050001"
+                    "0d0a2db40000000049454e44ae426082"
+                ),
+                media_type="image/png",
+                headers={"Cache-Control": "no-store"},
+            )
+        return Response(
+            payload,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @app.get("/api/health", tags=["system"])
     async def health(request: Request) -> dict:
