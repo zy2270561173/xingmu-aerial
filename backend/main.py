@@ -28,7 +28,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database.initialize(
             current_settings.admin_username, current_settings.admin_password
         )
-        transport = await start_rendezvous(app)
+        # P2P 的 UDP 会合是可选能力：端口被占用时不能让整个后端起不来（注册、心跳、遥控、
+        # 会员、支付都与它无关）。绑定失败就降级，客户端会自动回落到后端转发。
+        try:
+            transport = await start_rendezvous(app)
+        except OSError as error:
+            transport = None
+            print(
+                f"[p2p] rendezvous disabled: {error} "
+                f"(port {current_settings.p2p_udp_port}); clients fall back to relay",
+                flush=True,
+            )
         app.state.rendezvous_transport = transport
         payment_reconciliation = asyncio.create_task(vip.payment_reconciliation_worker(app))
         try:
