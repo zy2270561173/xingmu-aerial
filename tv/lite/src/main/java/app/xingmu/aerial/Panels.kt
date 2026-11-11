@@ -447,7 +447,9 @@ class ControlCenter(
 
         val status = CastAgent.accountStatus
         if (status == null) {
-            col.add(context.label(context.getString(R.string.bind_loading), 12f, 500, Ui.SECONDARY)
+            if (!CastAgent.accountBusy && CastAgent.accountError.isEmpty()) CastAgent.refreshAccount { goTo(CcPage.Bind) }
+            val text = if (CastAgent.accountError.isNotEmpty()) CastAgent.accountError else context.getString(R.string.bind_loading)
+            col.add(context.label(text, 12f, 500, Ui.SECONDARY)
                 .apply { setPadding(Ui.pxi(14f), Ui.pxi(12f), 0, 0) })
         } else {
             val owner = status.optJSONObject("owner")

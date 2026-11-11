@@ -68,6 +68,7 @@ object CastAgent {
     @Volatile var pairingCode: String = ""
     @Volatile var pairingUri: String = ""
     @Volatile var accountBusy = false
+    @Volatile var accountError: String = ""
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -350,6 +351,7 @@ object CastAgent {
                     pairingCode = ""
                     pairingUri = ""
                 }
+                accountError = if (status == null) "无法获取账号信息（详见日志）" else ""
             }
             accountBusy = false
             Handler(Looper.getMainLooper()).post(onDone)
@@ -366,9 +368,11 @@ object CastAgent {
                 .addHeader("X-Device-ID", CastConfig.deviceId)
                 .addHeader("X-Device-Token", CastConfig.deviceToken)
             if (method == "POST") {
-                builder.post(RequestBody.create(MediaType.parse("application/json"), "{}"))
+                val body = JSONObject().put("device_id", CastConfig.deviceId).put("device_token", CastConfig.deviceToken)
+                builder.post(RequestBody.create(MediaType.parse("application/json"), body.toString()))
             }
             http().newCall(builder.build()).execute().use { response ->
+                Log.i(TAG, "deviceCall " + path + " -> " + response.code())
                 if (!response.isSuccessful) return null
                 JSONObject(response.body()?.string().orEmpty())
             }
