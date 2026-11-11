@@ -1530,6 +1530,8 @@ private fun ProfileScreen(
                     Text("订单金额和权益由后端套餐快照生成，支付成功仅以后端验签回调为准。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if ("alipay" in state.vipPaymentMethods) Button(onClick = { viewModel.startVipPayment(plan.id, "alipay"); selectedPaymentPlan = null }, modifier = Modifier.fillMaxWidth()) { Text("支付宝") }
                     if ("wxpay" in state.vipPaymentMethods) Button(onClick = { viewModel.startVipPayment(plan.id, "wxpay"); selectedPaymentPlan = null }, modifier = Modifier.fillMaxWidth()) { Text("微信支付") }
+                    // 在线支付不可用或用户不想线上付时的兜底：提交订单，管理员后台确认后发放。
+                    TextButton(onClick = { viewModel.createVipOrder(plan.id); selectedPaymentPlan = null }, modifier = Modifier.fillMaxWidth()) { Text("提交订单（等待管理员确认）") }
                 }
             },
             confirmButton = {},
