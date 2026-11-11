@@ -262,9 +262,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     mutableState.value = state.value.copy(
                         busy = false,
                         message = "${device.name} 已提交绑定申请，请在审批设备中确认添加",
-                        section = AppSection.APPROVALS,
+                        section = AppSection.DEVICES,
                     )
-                    refreshApprovals()
+                    refreshDevices()
                 }
                 .onFailure { fail(it) }
         }

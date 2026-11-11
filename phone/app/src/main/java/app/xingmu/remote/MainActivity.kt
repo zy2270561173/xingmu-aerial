@@ -444,7 +444,7 @@ private fun StarlightApp(
             AppSection.CAST -> CastScreen(state, viewModel, padding, pickVideo, pickImages, pickApk)
             AppSection.APPROVALS -> ApprovalsScreen(state, viewModel, padding)
             AppSection.AGENT -> AgentScreen(state, viewModel, padding)
-            AppSection.PROFILE -> ProfileScreen(state, viewModel, padding, pickAvatar)
+            AppSection.PROFILE -> ProfileScreen(state, viewModel, padding, pickAvatar, scanQr)
         }
     }
     state.entitlementPrompt?.let { prompt ->
@@ -1250,6 +1250,7 @@ private fun ProfileScreen(
     viewModel: MainViewModel,
     padding: PaddingValues,
     pickAvatar: () -> Unit,
+      scanQr: () -> Unit,
 ) {
     val user = state.user ?: return
     val primaryDevice = state.primaryDevice
@@ -1326,7 +1327,7 @@ private fun ProfileScreen(
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ProfileShortcut(Icons.Default.Badge, "会员中心", Modifier.weight(1f)) { vipOpen = true; viewModel.refreshVip() }
-            ProfileShortcut(Icons.Default.QrCodeScanner, "扫码兑换", Modifier.weight(1f)) { vipOpen = true; viewModel.refreshVip() }
+            ProfileShortcut(Icons.Default.QrCodeScanner, "扫码兑换", Modifier.weight(1f)) { scanQr() }
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
