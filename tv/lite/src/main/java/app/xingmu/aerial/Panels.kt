@@ -521,8 +521,9 @@ class ControlCenter(
                 String.format("¥%.2f", order.optInt("amount_cents", 0) / 100.0),
             )
             infoRowText(context.getString(R.string.pay_status), order.optString("status"))
-            val code = order.optString("pay_url").ifEmpty { order.optString("qr_url") }
-                .ifEmpty { order.optString("code_url") }.ifEmpty { order.optString("url") }
+            // The backend stores the provider's checkout payload as payment_target (payurl/qrcode).
+            val code = order.optString("payment_target").ifEmpty { order.optString("pay_url") }
+                .ifEmpty { order.optString("qr_url") }.ifEmpty { order.optString("url") }
             if (code.isNotEmpty() && order.optString("status") == "pending") {
                 qr(code)
                 col.add(context.label(context.getString(R.string.pay_scan_hint), 11f, 500, Ui.TERTIARY)
