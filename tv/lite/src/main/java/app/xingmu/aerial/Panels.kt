@@ -143,10 +143,18 @@ class ControlCenter(
         // The veil over Home: the full app's 45% black.
         addView(View(context).apply { setBackgroundColor(0x73000000) }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val panel = GlassBox(context, 24f)
-        addView(panel, LayoutParams(Ui.pxi(300f), LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-            topMargin = Ui.pxi(24f); rightMargin = Ui.pxi(32f)
+        // Long pages (投屏设置 / 账号与会员) ran off the bottom edge with no way to reach the last
+        // rows; give them a bounded height and a scroll bar.
+        val tall = page != CcPage.Main
+        addView(panel, LayoutParams(Ui.pxi(300f), if (tall) Ui.pxi(500f) else LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
+            topMargin = Ui.pxi(20f); rightMargin = Ui.pxi(32f)
         })
-        panel.addView(col)
+        val scroll = android.widget.ScrollView(context).apply {
+            isVerticalScrollBarEnabled = true
+            isFillViewport = tall
+            addView(col)
+        }
+        panel.addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         when (page) {
             CcPage.Main -> if (Kids.active) kidsMain() else main()
             CcPage.Boot -> boot()
@@ -446,6 +454,7 @@ class ControlCenter(
         row(back)
 
         val status = CastAgent.accountStatus
+        val owner = status?.optJSONObject("owner")
         // A pending TV answers 403 on the account endpoint but 200 on pairing: show the code as soon
         // as we have one, instead of the "cannot fetch" line.
         if (status == null && CastAgent.pairingCode.isEmpty()) {
@@ -454,7 +463,6 @@ class ControlCenter(
             col.add(context.label(text, 12f, 500, Ui.SECONDARY)
                 .apply { setPadding(Ui.pxi(14f), Ui.pxi(12f), 0, 0) })
         } else {
-            val owner = status?.optJSONObject("owner")
             if (owner == null) {
                 infoRow(R.string.bind_account, context.getString(R.string.bind_unbound))
                 if (CastAgent.pairingCode.isNotEmpty()) {
@@ -482,6 +490,25 @@ class ControlCenter(
             }
         }
 
+        // Plans are list-only on the TV: paying still happens on the phone, so the page explains that
+        // instead of pretending to be a checkout.
+        val plans = CastAgent.plans
+        if (owner != null && plans != null && plans.length() > 0) {
+            col.add(context.label(context.getString(R.string.bind_plans), 11f, 500, Ui.SECONDARY)
+                .apply { setPadding(Ui.pxi(14f), Ui.pxi(12f), Ui.pxi(14f), 0) })
+            for (i in 0 until plans.length().coerceAtMost(4)) {
+                val plan = plans.optJSONObject(i) ?: continue
+                val price = plan.optInt("price_cents", 0) / 100.0
+                val days = plan.optInt("days", 0)
+                infoRowText(
+                    plan.optString("name"),
+                    String.format("¥%.2f · %d 天", price, days),
+                )
+            }
+            col.add(context.label(context.getString(R.string.bind_pay_hint), 11f, 500, Ui.TERTIARY)
+                .apply { setPadding(Ui.pxi(14f), Ui.pxi(6f), Ui.pxi(14f), 0) })
+        }
+
         val refresh = MenuRow(context, Glyph.Gear, context.getString(R.string.bind_refresh)).apply {
             action = {
                 goTo(CcPage.Bind)
@@ -492,6 +519,10 @@ class ControlCenter(
         row(refresh)
     }
 
+    private fun infoRowText(label: String, value: String) {
+        col.add(context.label(label, 12f, 500, Ui.WHITE).apply { setPadding(Ui.pxi(14f), Ui.pxi(6f), Ui.pxi(14f), 0) })
+        col.add(context.label(value, 12f, 500, Ui.SECONDARY).apply { setPadding(Ui.pxi(14f), Ui.pxi(2f), Ui.pxi(14f), Ui.pxi(4f)) })
+    }
     private fun infoRow(label: Int, value: String) {
         col.add(context.label(context.getString(label), 11f, 500, Ui.SECONDARY)
             .apply { setPadding(Ui.pxi(14f), Ui.pxi(8f), Ui.pxi(14f), 0) })

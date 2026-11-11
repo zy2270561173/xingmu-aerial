@@ -69,6 +69,8 @@ object CastAgent {
     @Volatile var pairingUri: String = ""
     @Volatile var accountBusy = false
     @Volatile var accountError: String = ""
+    /** VIP plans for the account page; empty when sales are off or the device has no owner. */
+    @Volatile var plans: JSONArray? = null
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -261,6 +263,9 @@ object CastAgent {
                     json.optLong("expires_at", 0L),
                 )
             }
+            // The phone just claimed the pairing code: pull the account again so the page updates
+            // without the user pressing 刷新.
+            "binding_updated" -> refreshAccount()
             "preview_start" -> startPreview(ws, bounded(json.optInt("fps", 1), 1, 3))
             "preview_stop" -> stopPreview()
             "error" -> Log.w(TAG, "backend error: " + json.optString("code"))
@@ -342,6 +347,7 @@ object CastAgent {
             runCatching {
                 val status = deviceCall("/api/vip/device/status", "GET")
                 accountStatus = status
+                plans = runCatching { deviceCallArray("/api/vip/device/plans") }.getOrNull()
                 if (status == null || status.isNull("owner")) {
                     val pairing = deviceCall("/api/pairing/device", "POST")
                     // The response nests the code under app_pairing; there is no top-level "code".
@@ -359,6 +365,21 @@ object CastAgent {
         }
     }
 
+    /** Device-authenticated GET that expects a JSON array (the plans list). */
+    private fun deviceCallArray(path: String): JSONArray? {
+        if (CastConfig.backendUrl.isEmpty()) return null
+        return runCatching {
+            val request = Request.Builder()
+                .url(CastConfig.backendUrl.trimEnd('/') + path)
+                .addHeader("X-Device-ID", CastConfig.deviceId)
+                .addHeader("X-Device-Token", CastConfig.deviceToken)
+                .build()
+            http().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                JSONArray(response.body()?.string().orEmpty())
+            }
+        }.getOrNull()
+    }
     /** Device-authenticated call: returns the JSON body, or null on any failure. */
     private fun deviceCall(path: String, method: String): JSONObject? {
         if (CastConfig.backendUrl.isEmpty()) return null

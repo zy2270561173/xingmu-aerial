@@ -51,4 +51,6 @@
     <string name="bind_loading" translatable="false">正在获取账号信息…</string>
     <string name="bind_refresh" translatable="false">刷新账号信息</string>
     <string name="bind_vip_on" translatable="false">会员已开通</string>
-    <string name="bind_vip_off" translatable="false">免费会员</string></resources>
+    <string name="bind_vip_off" translatable="false">免费会员</string>    <string name="bind_plans" translatable="false">套餐</string>
+    <string name="bind_pay_hint" translatable="false">在手机端完成支付，电视端会自动同步会员状态</string>
+</resources>
