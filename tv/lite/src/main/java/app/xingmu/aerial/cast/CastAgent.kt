@@ -71,6 +71,10 @@ object CastAgent {
     @Volatile var accountError: String = ""
     /** VIP plans for the account page; empty when sales are off or the device has no owner. */
     @Volatile var plans: JSONArray? = null
+    /** Current payment order payload and the last error, for the pay page. */
+    @Volatile var payment: JSONObject? = null
+    @Volatile var paymentError: String = ""
+    @Volatile var paymentBusy = false
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -365,6 +369,40 @@ object CastAgent {
         }
     }
 
+    /** Starts a VIP payment for [planId]; the response carries the code to show as a QR. */
+    fun createPayment(planId: Int, method: String): JSONObject? = deviceCall(
+        "/api/vip/device/payments", "POST",
+        JSONObject().put("plan_id", planId).put("payment_method", method).toString(),
+    )
+
+    fun paymentStatus(orderNo: String): JSONObject? = deviceCall("/api/vip/device/payments/" + orderNo, "GET")
+    /** Creates the order and reports back on the main thread; the pay page renders from [payment]. */
+    fun startPayment(planId: Int, method: String, onDone: () -> Unit) {
+        if (paymentBusy) return
+        paymentBusy = true
+        paymentError = ""
+        captureWorker.execute {
+            val result = createPayment(planId, method)
+            payment = result
+            paymentError = if (result == null) "下单失败（支付可能未配置）" else ""
+            paymentBusy = false
+            Handler(Looper.getMainLooper()).post(onDone)
+        }
+    }
+
+    /** Re-reads the order so the QR page can show "已支付" without leaving the screen. */
+    fun refreshPayment(onDone: () -> Unit) {
+        val orderNo = payment?.optString("order_no").orEmpty()
+        if (orderNo.isEmpty()) return
+        if (paymentBusy) return
+        paymentBusy = true
+        captureWorker.execute {
+            val latest = paymentStatus(orderNo)
+            if (latest != null) payment = latest
+            paymentBusy = false
+            Handler(Looper.getMainLooper()).post(onDone)
+        }
+    }
     /** Device-authenticated GET that expects a JSON array (the plans list). */
     private fun deviceCallArray(path: String): JSONArray? {
         if (CastConfig.backendUrl.isEmpty()) return null
@@ -381,7 +419,7 @@ object CastAgent {
         }.getOrNull()
     }
     /** Device-authenticated call: returns the JSON body, or null on any failure. */
-    private fun deviceCall(path: String, method: String): JSONObject? {
+    private fun deviceCall(path: String, method: String, body: String = "{}"): JSONObject? {
         if (CastConfig.backendUrl.isEmpty()) return null
         return runCatching {
             val url = CastConfig.backendUrl.trimEnd('/') + path
@@ -390,8 +428,14 @@ object CastAgent {
                 .addHeader("X-Device-ID", CastConfig.deviceId)
                 .addHeader("X-Device-Token", CastConfig.deviceToken)
             if (method == "POST") {
-                val body = JSONObject().put("device_id", CastConfig.deviceId).put("device_token", CastConfig.deviceToken)
-                builder.post(RequestBody.create(MediaType.parse("application/json"), body.toString()))
+                // Pairing endpoints expect the credentials in the body; payment endpoints take their
+                // own JSON, so only fill in credentials when the caller passed nothing.
+                val payload = if (body == "{}") {
+                    JSONObject().put("device_id", CastConfig.deviceId).put("device_token", CastConfig.deviceToken).toString()
+                } else {
+                    body
+                }
+                builder.post(RequestBody.create(MediaType.parse("application/json"), payload))
             }
             http().newCall(builder.build()).execute().use { response ->
                 Log.i(TAG, "deviceCall " + path + " -> " + response.code())

@@ -53,4 +53,14 @@
     <string name="bind_vip_on" translatable="false">会员已开通</string>
     <string name="bind_vip_off" translatable="false">免费会员</string>    <string name="bind_plans" translatable="false">套餐</string>
     <string name="bind_pay_hint" translatable="false">在手机端完成支付，电视端会自动同步会员状态</string>
-</resources>
+    <string name="pay_title" translatable="false">购买会员</string>
+    <string name="pay_choose" translatable="false">选择支付方式</string>
+    <string name="pay_alipay" translatable="false">支付宝</string>
+    <string name="pay_wxpay" translatable="false">微信支付</string>
+    <string name="pay_cancel" translatable="false">取消</string>
+    <string name="pay_creating" translatable="false">正在创建订单…</string>
+    <string name="pay_plan" translatable="false">套餐</string>
+    <string name="pay_amount" translatable="false">金额</string>
+    <string name="pay_status" translatable="false">状态</string>
+    <string name="pay_scan_hint" translatable="false">用手机扫码支付，支付完成后点“刷新支付状态”</string>
+    <string name="pay_refresh" translatable="false">刷新支付状态</string></resources>

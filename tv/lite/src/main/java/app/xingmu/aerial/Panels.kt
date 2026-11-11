@@ -113,7 +113,7 @@ private fun LinearLayout.add(v: View, w: Int = LinearLayout.LayoutParams.MATCH_P
 }
 
 /** Control Center's pages, as the full app's CcPage: inputs only where Lite can list them, no updates. */
-enum class CcPage { Main, Boot, Inputs, Cast, About, Bind }
+enum class CcPage { Main, Boot, Inputs, Cast, About, Bind, Pay }
 
 /**
  * Control Center, as the full app's ControlCenter main page: the time and date with the network,
@@ -137,7 +137,7 @@ class ControlCenter(
     private val kidsBack: () -> Unit = {},
 ) : Sheet(context, close) {
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(Ui.pxi(16f), Ui.pxi(16f), Ui.pxi(16f), Ui.pxi(16f)) }
+    private val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(Ui.pxi(14f), Ui.pxi(12f), Ui.pxi(14f), Ui.pxi(18f)) }
 
     init {
         // The veil over Home: the full app's 45% black.
@@ -146,8 +146,8 @@ class ControlCenter(
         // Long pages (投屏设置 / 账号与会员) ran off the bottom edge with no way to reach the last
         // rows; give them a bounded height and a scroll bar.
         val tall = page != CcPage.Main
-        addView(panel, LayoutParams(Ui.pxi(300f), if (tall) Ui.pxi(500f) else LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-            topMargin = Ui.pxi(20f); rightMargin = Ui.pxi(32f)
+        addView(panel, LayoutParams(Ui.pxi(300f), if (tall) Ui.pxi(470f) else LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
+            topMargin = Ui.pxi(22f); rightMargin = Ui.pxi(32f)
         })
         val scroll = android.widget.ScrollView(context).apply {
             isVerticalScrollBarEnabled = true
@@ -162,6 +162,7 @@ class ControlCenter(
             CcPage.Cast -> cast()
             CcPage.About -> about()
             CcPage.Bind -> bind()
+            CcPage.Pay -> pay()
         }
         // In Kids mode on leaving it, as the full app.
         focusFirst(if (page == CcPage.Main && Kids.active && OutputDevice.showsVolume(context)) 1 else 0)
@@ -500,10 +501,13 @@ class ControlCenter(
                 val plan = plans.optJSONObject(i) ?: continue
                 val price = plan.optInt("price_cents", 0) / 100.0
                 val days = plan.optInt("days", 0)
-                infoRowText(
-                    plan.optString("name"),
-                    String.format("¥%.2f · %d 天", price, days),
-                )
+                // Tapping a plan opens the payment method dialog; the order page shows the QR.
+                val row = MenuRow(context, Glyph.Bag, plan.optString("name"),
+                    String.format("¥%.2f · %d 天", price, days)).apply {
+                    action = { choosePayment(plan.optInt("id", 0), plan.optString("name")) }
+                }
+                col.add(row, top = 4f)
+                row(row)
             }
             col.add(context.label(context.getString(R.string.bind_pay_hint), 11f, 500, Ui.TERTIARY)
                 .apply { setPadding(Ui.pxi(14f), Ui.pxi(6f), Ui.pxi(14f), 0) })
@@ -519,6 +523,60 @@ class ControlCenter(
         row(refresh)
     }
 
+    /** Payment method chooser; the TV only displays the QR, the money moves on the phone side. */
+    private fun choosePayment(planId: Int, planName: String) {
+        if (planId <= 0) return
+        AlertDialog.Builder(context)
+            .setTitle(context.getString(R.string.pay_choose) + " · " + planName)
+            .setItems(
+                arrayOf(context.getString(R.string.pay_alipay), context.getString(R.string.pay_wxpay)),
+            ) { _, which ->
+                CastAgent.payment = null
+                goTo(CcPage.Pay)
+                CastAgent.startPayment(planId, if (which == 0) "alipay" else "wxpay") { goTo(CcPage.Pay) }
+            }
+            .setNegativeButton(context.getString(R.string.pay_cancel), null)
+            .show()
+    }
+
+    /** The order page: QR for scanning, live status, and a manual refresh. */
+    private fun pay() {
+        val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.pay_title)).apply {
+            action = { goTo(CcPage.Bind) }
+        }
+        col.addView(back)
+        row(back)
+
+        val order = CastAgent.payment
+        if (order == null) {
+            val text = CastAgent.paymentError.ifEmpty { context.getString(R.string.pay_creating) }
+            col.add(context.label(text, 12f, 500, Ui.SECONDARY)
+                .apply { setPadding(Ui.pxi(14f), Ui.pxi(12f), 0, 0) })
+        } else {
+            infoRowText(context.getString(R.string.pay_plan), order.optString("plan_name"))
+            infoRowText(
+                context.getString(R.string.pay_amount),
+                String.format("¥%.2f", order.optInt("amount_cents", 0) / 100.0),
+            )
+            infoRowText(context.getString(R.string.pay_status), order.optString("status"))
+            val code = order.optString("pay_url").ifEmpty { order.optString("qr_url") }
+                .ifEmpty { order.optString("code_url") }.ifEmpty { order.optString("url") }
+            if (code.isNotEmpty() && order.optString("status") == "pending") {
+                qr(code)
+                col.add(context.label(context.getString(R.string.pay_scan_hint), 11f, 500, Ui.TERTIARY)
+                    .apply { setPadding(Ui.pxi(14f), Ui.pxi(6f), Ui.pxi(14f), 0) })
+            }
+        }
+
+        val refresh = MenuRow(context, Glyph.Gear, context.getString(R.string.pay_refresh)).apply {
+            action = {
+                goTo(CcPage.Pay)
+                CastAgent.refreshPayment { goTo(CcPage.Pay) }
+            }
+        }
+        col.add(refresh, top = 10f)
+        row(refresh)
+    }
     private fun infoRowText(label: String, value: String) {
         col.add(context.label(label, 12f, 500, Ui.WHITE).apply { setPadding(Ui.pxi(14f), Ui.pxi(6f), Ui.pxi(14f), 0) })
         col.add(context.label(value, 12f, 500, Ui.SECONDARY).apply { setPadding(Ui.pxi(14f), Ui.pxi(2f), Ui.pxi(14f), Ui.pxi(4f)) })
