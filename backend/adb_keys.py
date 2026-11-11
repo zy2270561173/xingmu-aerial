@@ -80,3 +80,28 @@ def inject_key(serial: str, name: str, timeout: float = 5.0) -> tuple[bool, str]
     if result.returncode != 0 or "Error" in text or "Exception" in text:
         return False, text[:200] or f"exit {result.returncode}"
     return True, f"injected {name} ({code})"
+
+
+def install_apk(serial: str, apk_path: str, timeout: float = 180.0) -> tuple[bool, str]:
+    """Installs an APK the server already stores, using the same adb link the keys use.
+
+    The TV cannot install through its own adbd (the app has no shell access to itself), and a
+    system-installer intent would need a tap on the remote. The server's adb session has neither
+    problem, so installation happens here and the TV only shows the result.
+    """
+    adb = adb_path()
+    if not adb:
+        return False, "adb not found on the server"
+    try:
+        result = subprocess.run(
+            [adb, "-s", serial, "install", "-r", "-g", apk_path],
+            capture_output=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return False, f"{type(error).__name__}"
+    output = (result.stdout or b"") + (result.stderr or b"")
+    text = output.decode("utf-8", "replace").strip()
+    if result.returncode != 0 or "Failure" in text or "Error" in text:
+        return False, text[-200:] or f"exit {result.returncode}"
+    return True, text.splitlines()[-1][:120] if text else "installed"
