@@ -180,14 +180,13 @@ location / {
 
 没有 `Upgrade/Connection` 两行，设备会一直 `400` 或秒断，表现是「电视一直显示未连接」。
 
-**Web 控制台**：`web/` 是 Vue 项目，本地 `npm run build` 后把 `dist/` 传到 `/www/wwwroot/xingmu-aerial/web/dist`，Nginx 里加：
+**Web 控制台**：构建产物已经打进后端（`backend/webui/`），由 FastAPI 直接提供，**不需要再配 Nginx 站点**：
 
-```nginx
-location /console/ {
-    alias /www/wwwroot/xingmu-aerial/web/dist/;
-    try_files $uri $uri/ /console/index.html;
-}
-```
+- 访问 `https://tv.example.com/` 就是控制台；
+- 任意前端路由（如 `/devices`、`/login`）都会回落到 `index.html`；
+- `/assets/*` 是静态资源，`/api/*`、`/ws/*`、`/static/*` 不走前端回落。
+
+重新构建前端后，把 `web/` 的 `dist/` 覆盖到 `backend/webui/` 即可，随后重启后端。
 
 ---
 
