@@ -308,7 +308,7 @@ async def _complete_command(
     websocket.app.state.db.execute(
         """
         UPDATE commands SET status = ?, result_json = ?, completed_at = ?
-        WHERE id = ? AND device_pk = ?
+        WHERE id = ? AND device_pk = ? AND status <> 'completed'
         """,
         (
             status_value,

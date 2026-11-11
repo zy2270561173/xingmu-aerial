@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType
@@ -282,11 +283,35 @@ object CastAgent {
         }
     }
 
+    /** Downloads the APK the backend already stored, then installs it through the TV's own adbd. */
+    private fun installFromUrl(payload: JSONObject): Pair<Boolean, String> {
+        val url = payload.optString("url")
+        if (url.isEmpty()) return false to "缺少 APK 地址"
+        val ctx = appContext ?: return false to "服务未就绪"
+        return runCatching {
+            val request = Request.Builder().url(url).build()
+            http().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return false to ("下载失败：" + response.code())
+                val dir = File(ctx.cacheDir, "apk").apply { mkdirs() }
+                val safe = payload.optString("filename").ifEmpty { "update.apk" }
+                    .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val file = File(dir, safe)
+                response.body()?.byteStream()?.use { input ->
+                    file.outputStream().use { output -> input.copyTo(output) }
+                }
+                val result = LegacyAdbClient.installPackage(ctx, CastConfig.adbPort, file)
+                file.delete()
+                if (result != null && result.success) true to "已安装"
+                else false to ("安装失败：" + (result?.message ?: "adb 不可用"))
+            }
+        }.getOrElse { false to ("安装异常：" + (it.message ?: "unknown")) }
+    }
     /** One remote command. Everything the launcher cannot really do is reported as failed. */
     private fun executeCommand(type: String, payload: JSONObject): Pair<Boolean, String> = when (type) {
         "webplayer" -> openWebPlayer(payload)
         "app" -> if (payload.optString("action") == "foreground") bringSelfToFront() else launchApp(payload)
         "key" -> sendKey(payload)
+        "install" -> installFromUrl(payload)
         else -> false to "Aerial Lite 暂不支持该指令：$type"
     }
 
