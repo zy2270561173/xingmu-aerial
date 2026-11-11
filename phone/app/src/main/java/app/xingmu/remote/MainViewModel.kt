@@ -76,6 +76,8 @@ data class AppUiState(
     val liveScreen: Boolean = true,
     val lastSnapshotAt: Long = 0,
     val recentCommands: List<CommandStatus> = emptyList(),
+    val deviceEvents: List<app.xingmu.remote.data.DeviceEvent> = emptyList(),
+    val deviceCommands: List<app.xingmu.remote.data.CommandReceipt> = emptyList(),
     val lanDevices: List<DlnaDevice> = emptyList(),
     val lanDiscovering: Boolean = false,
     val selectedLanHost: String? = null,
@@ -461,6 +463,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Pulls the backend-side history for the open device: events timeline and recent commands. */
+    fun loadDeviceHistory(deviceId: String?) {
+        val id = deviceId ?: return
+        val credential = token ?: return
+        viewModelScope.launch {
+            runCatching { backend.listEvents(state.value.baseUrl, credential, id) }
+                .onSuccess { events -> mutableState.value = state.value.copy(deviceEvents = events) }
+            runCatching { backend.listCommands(state.value.baseUrl, credential, id) }
+                .onSuccess { commands -> mutableState.value = state.value.copy(deviceCommands = commands) }
+        }
+    }
     fun reviewApproval(deviceId: String, approve: Boolean, ownerUserId: Int? = null) {
         val credential = token ?: return
         viewModelScope.launch {

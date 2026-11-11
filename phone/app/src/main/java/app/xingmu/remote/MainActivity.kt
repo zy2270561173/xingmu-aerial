@@ -1733,8 +1733,31 @@ private fun AgentScreen(state: AppUiState, viewModel: MainViewModel, padding: Pa
             state = scrollState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 24.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                LaunchedEffect(device?.deviceId) { viewModel.loadDeviceHistory(device?.deviceId) }
+            }
+            if (state.deviceEvents.isNotEmpty() || state.deviceCommands.isNotEmpty()) {
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("后端历史", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            if (state.deviceEvents.isNotEmpty()) {
+                                Text("最近事件 ${state.deviceEvents.size} 条", style = MaterialTheme.typography.bodySmall)
+                                state.deviceEvents.take(3).forEach { event ->
+                                    Text("· ${event.type}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (state.deviceCommands.isNotEmpty()) {
+                                Text("最近指令 ${state.deviceCommands.size} 条", style = MaterialTheme.typography.bodySmall)
+                                state.deviceCommands.take(3).forEach { command ->
+                                    Text("· ${command.type} · ${command.status}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
