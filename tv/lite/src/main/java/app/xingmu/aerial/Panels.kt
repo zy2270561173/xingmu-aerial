@@ -640,7 +640,7 @@ class ControlCenter(
         col.add(adbPort)
         row(adbPort)
 
-        val backend = MenuRow(context, Glyph.Globe, context.getString(R.string.cast_backend), CastConfig.backendUrl).apply {
+        val backend = MenuRow(context, Glyph.Globe, context.getString(R.string.conn_backend), CastConfig.backendUrl).apply {
             action = {
                 editText(context.getString(R.string.cast_backend), CastConfig.backendUrl) { value ->
                     CastConfig.setBackendUrl(value)
