@@ -374,7 +374,14 @@ object CastAgent {
         val name = payload.optString("key", "").trim().lowercase()
         val labelled = name.ifEmpty { payload.optInt("keycode", 0).toString() }
         var code = payload.optInt("keycode", 0)
-        if (code <= 0) code = keyCodeFor(name)
+        if (code <= 0) {
+            // 网页/手机可能发 DPAD_RIGHT、KEYCODE_DPAD_RIGHT、dpad_right、22 等写法
+            var normalised = name.trim().lowercase().replace(" ", "_")
+            for (prefix in listOf("keycode_", "dpad_", "remote_")) {
+                if (normalised.startsWith(prefix)) normalised = normalised.removePrefix(prefix)
+            }
+            code = if (normalised.toIntOrNull() != null) normalised.toInt() else keyCodeFor(normalised)
+        }
         if (code <= 0) return false to "未知按键：$labelled"
         val global = when (code) {
             4 -> AccessibilityService.GLOBAL_ACTION_BACK
