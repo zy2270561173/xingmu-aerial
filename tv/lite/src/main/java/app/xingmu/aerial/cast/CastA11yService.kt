@@ -16,7 +16,11 @@ class CastA11yService : AccessibilityService() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString().orEmpty()
+        if (pkg.isNotEmpty() && pkg != foreground) foreground = pkg
+    }
 
     override fun onInterrupt() = Unit
 
@@ -28,6 +32,10 @@ class CastA11yService : AccessibilityService() {
     companion object {
         @Volatile
         private var instance: CastA11yService? = null
+
+    /** Foreground package seen by the service; the agent reports it as current_activity. */
+    @Volatile var foreground: String = ""
+        private set
 
         val connected: Boolean get() = instance != null
 

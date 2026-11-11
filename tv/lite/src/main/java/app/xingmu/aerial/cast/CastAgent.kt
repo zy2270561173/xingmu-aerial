@@ -615,7 +615,7 @@ object CastAgent {
                     .put("lan_ip", localIpv4())
                     .put("udp_p2p_transport", "ready")
                     .put("metadata", metadata)
-                    .put("current_activity", foregroundPackage)
+                    .put("current_activity", CastA11yService.foreground.ifEmpty { foregroundPackage })
                 val message = JSONObject()
                     .put("type", "heartbeat")
                     .put("device_id", CastConfig.deviceId)
