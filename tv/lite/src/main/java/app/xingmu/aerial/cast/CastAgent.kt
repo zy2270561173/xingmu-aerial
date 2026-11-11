@@ -603,6 +603,11 @@ object CastAgent {
                         else -> ""
                     })
                     .put("capture_mode", if (adbReady) "adb" else "")
+                    // Kept in metadata (not only in the tuple) so the phone can show the OS level and
+                    // whether the accessibility service is actually on, instead of "未上报".
+                    .put("android_api", android.os.Build.VERSION.SDK_INT)
+                    .put("android_release", android.os.Build.VERSION.RELEASE ?: "")
+                    .put("accessibility_active", CastA11yService.connected)
                 val data = JSONObject()
                     .put("name", CastConfig.deviceName)
                     .put("model", android.os.Build.MODEL ?: "")
