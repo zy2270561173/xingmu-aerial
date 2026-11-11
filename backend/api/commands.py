@@ -125,6 +125,41 @@ async def send_command(
                 )
             except Exception:
                 pass
+    # Snapshots: the TV app cannot screencap itself (shell-only permission), so grab it here and
+    # hand back a URL the phone can render directly.
+    if payload.type == "snapshot":
+        try:
+            import json as _json
+            import time as _time
+            from pathlib import Path as _Path
+
+            from adb_keys import capture_png
+
+            serial = f"{device.get('lan_ip') or ''}:{device.get('adb_port') or 5555}"
+            ok, data = capture_png(serial)
+            if ok:
+                directory = _Path(request.app.state.settings.apk_dir)
+                name = f"snap-{device_id.replace(':', '_')}-{int(_time.time())}.png"
+                (directory / name).write_bytes(data)  # type: ignore[arg-type]
+                base = request.app.state.settings.public_base_url or str(request.base_url).rstrip("/")
+                detail = {"success": True, "message": f"{len(data)} bytes", "url": f"{base}/static/apk/{name}"}
+                status_value = "completed"
+            else:
+                detail = {"success": False, "message": str(data)[:200]}
+                status_value = "failed"
+            request.app.state.db.execute(
+                "UPDATE commands SET status = ?, result_json = ?, completed_at = ?"
+                " WHERE id = ? AND status IN ('pending', 'delivered')",
+                (status_value, _json.dumps(detail, ensure_ascii=False), int(_time.time()), command["id"]),
+            )
+        except Exception as error:  # a failed shortcut must not break command delivery
+            try:
+                request.app.state.db.execute(
+                    "UPDATE commands SET result_json = ? WHERE id = ?",
+                    (f'{{"success": false, "message": "snapshot error: {type(error).__name__}"}}', command["id"]),
+                )
+            except Exception:
+                pass
     return command
 
 

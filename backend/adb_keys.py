@@ -82,6 +82,26 @@ def inject_key(serial: str, name: str, timeout: float = 5.0) -> tuple[bool, str]
     return True, f"injected {name} ({code})"
 
 
+def capture_png(serial: str, timeout: float = 20.0) -> tuple[bool, bytes | str]:
+    """Grabs one screenshot as PNG over the same adb link; returns bytes on success."""
+    adb = adb_path()
+    if not adb:
+        return False, "adb not found on the server"
+    try:
+        result = subprocess.run(
+            [adb, "-s", serial, "exec-out", "screencap", "-p"],
+            capture_output=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return False, f"{type(error).__name__}"
+    data = result.stdout or b""
+    if result.returncode != 0 or len(data) < 8 or not data.startswith(b"\x89PNG"):
+        text = (result.stderr or b"").decode("utf-8", "replace").strip()
+        return False, text[:200] or f"exit {result.returncode}"
+    return True, data
+
+
 def install_apk(serial: str, apk_path: str, timeout: float = 180.0) -> tuple[bool, str]:
     """Installs an APK the server already stores, using the same adb link the keys use.
 
