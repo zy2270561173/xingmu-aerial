@@ -44,3 +44,6 @@ local.properties
 .DS_Store
 Thumbs.db
 *.whl
+
+# 落地页下载包（体积较大，单独放行）
+!downloads/*.apk

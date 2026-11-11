@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>星幕 · 下载</title>
+<meta name="theme-color" content="#071018" />
+<style>
+  :root {
+    --glass: rgba(18, 30, 34, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --accent: #3fd0c9;
+    --accent-2: #2f80ed;
+    --text: #eaf3f2;
+    --dim: #9fb3b0;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background-color: #071018;
+    background-image:
+      linear-gradient(180deg, rgba(6, 16, 22, 0.55), rgba(4, 10, 14, 0.86)),
+      url("https://startou.muysky.cn/api/wallpaper/bing");
+    background-position: center;
+    background-size: cover;
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 72px 20px 96px; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+  .mark {
+    width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #04231f; font-weight: 800; font-size: 20px;
+  }
+  h1 { font-size: clamp(30px, 5vw, 44px); margin: 0 0 6px; letter-spacing: 0.5px; }
+  .sub { color: var(--dim); margin: 0 0 42px; font-size: 15px; line-height: 1.7; }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    padding: 26px;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .card h2 { margin: 0; font-size: 21px; }
+  .card .meta { color: var(--dim); font-size: 13px; line-height: 1.8; }
+  .pill {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px;
+    border: 1px solid rgba(63, 208, 201, 0.45); color: var(--accent); margin-right: 8px;
+  }
+  .btn {
+    margin-top: auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 13px 18px; border-radius: 14px; text-decoration: none; font-weight: 600; font-size: 15px;
+    color: #04231f; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    transition: transform 0.15s ease, filter 0.15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+  .btn.ghost { background: rgba(255,255,255,0.08); color: var(--text); border: 1px solid var(--glass-border); }
+  .notes { margin-top: 40px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 18px; padding: 22px 24px; backdrop-filter: blur(14px); }
+  .notes h3 { margin: 0 0 12px; font-size: 16px; }
+  .notes ol { margin: 0; padding-left: 20px; color: var(--dim); font-size: 14px; line-height: 2; }
+  .notes code { color: var(--accent); background: rgba(63,208,201,0.1); padding: 1px 6px; border-radius: 6px; }
+  footer { margin-top: 44px; color: #7f9391; font-size: 12.5px; line-height: 1.9; }
+  footer a { color: var(--accent); text-decoration: none; }
+  @media (max-width: 480px) { .wrap { padding-top: 48px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <span class="mark">星</span>
+    <div>
+      <h1>星幕</h1>
+      <div class="sub">Aerial 风格的电视桌面 + 手机遥控。四端同源：电视、手机、后端、控制台。</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>星幕 Aerial · 电视端</h2>
+      <div class="meta">
+        <span class="pill">1.27</span><span class="pill">Android 4.4+</span>
+        <br />包名 <code>app.xingmu.aerial.cast</code> · 9.7 MB
+        <br />桌面 / 控制中心 / 投屏接收 / DLNA / 会员
+      </div>
+      <a class="btn" href="https://v4.gh-proxy.org/https://github.com/zy2270561173/xingmu-aerial/raw/main/downloads/xingmu-aerial-tv-1.27.apk">
+        下载电视端 APK
+      </a>
+      <a class="btn ghost" href="https://v4.gh-proxy.org/https://github.com/zy2270561173/xingmu-aerial/raw/main/downloads/xingmu-aerial-tv-1.27.apk">
+        直连下载（不走代理）
+      </a>
+    </section>
+
+    <section class="card">
+      <h2>星幕遥控 · 手机端</h2>
+      <div class="meta">
+        <span class="pill">0.13.9</span><span class="pill">Android 6.0+</span>
+        <br />包名 <code>app.xingmu.remote</code> · 12 MB
+        <br />遥控 / 投屏 / 应用管理 / 会员与扫码绑定
+      </div>
+      <a class="btn" href="https://v4.gh-proxy.org/https://github.com/zy2270561173/xingmu-aerial/raw/main/downloads/xingmu-remote-0.13.9.apk">
+        下载手机端 APK
+      </a>
+      <a class="btn ghost" href="https://v4.gh-proxy.org/https://github.com/zy2270561173/xingmu-aerial/raw/main/downloads/xingmu-remote-0.13.9.apk">
+        直连下载（不走代理）
+      </a>
+    </section>
+  </div>
+
+  <div class="notes">
+    <h3>安装说明</h3>
+    <ol>
+      <li><strong>电视</strong>：把 APK 拷到 U 盘插到电视，用文件管理器点击安装；或手机用「当贝市场」等工具推送。</li>
+      <li>首次打开会请求「允许安装未知应用」，同意即可。</li>
+      <li>装好后在「投屏设置 → 连接设置 → 后端地址」填 <code>https://startou.muysky.cn</code>，重启应用。</li>
+      <li><strong>手机</strong>：下载后直接安装，打开用同一账号登录，即可看到已绑定的电视。</li>
+      <li>如果下载速度慢，用上面「直连下载」或把链接里的 <code>v4.gh-proxy.org</code> 换成 <code>ghproxy.net</code>。</li>
+    </ol>
+  </div>
+
+  <footer>
+    原作 <a href="https://github.com/pengchujin/aerial-tv">Aerial TV</a>（pengchujin，MIT 许可）· 星幕重制版，合并自制「星投屏」能力。<br />
+    源码与问题反馈：<a href="https://github.com/zy2270561173/xingmu-aerial">github.com/zy2270561173/xingmu-aerial</a>
+  </footer>
+</div>
+</body>
+</html>
