@@ -10,6 +10,7 @@ import app.xingmu.remote.data.DeviceEvent
 import app.xingmu.remote.data.LoginResult
 import app.xingmu.remote.data.HostedPlayerSession
 import app.xingmu.remote.data.UploadedApk
+import app.xingmu.remote.data.TvDevice
 import app.xingmu.remote.data.User
 import app.xingmu.remote.data.P2PSession
 import app.xingmu.remote.data.VipPlan
@@ -179,6 +180,12 @@ class BackendClient(private val context: Context) {
         ) as JSONObject).toUser()
     }
 
+    suspend fun deleteAvatar(baseUrl: String, token: String) {
+        executeJson(
+            request(baseUrl, "/api/auth/avatar").newBuilder().delete().build(), token,
+        )
+    }
+
     suspend fun listDevices(baseUrl: String, token: String) =
         (executeJson(request(baseUrl, "/api/devices"), token) as JSONArray).toTvDevices()
 
@@ -201,6 +208,18 @@ class BackendClient(private val context: Context) {
 
     suspend fun getDevice(baseUrl: String, token: String, deviceId: String) =
         (executeJson(request(baseUrl, "/api/device/$deviceId"), token) as JSONObject).toTvDevice()
+
+    suspend fun renameDevice(
+        baseUrl: String,
+        token: String,
+        deviceId: String,
+        name: String,
+    ): TvDevice {
+        val body = JSONObject().put("name", name.trim()).toString().toRequestBody(JSON)
+        return (executeJson(
+            request(baseUrl, "/api/device/$deviceId").newBuilder().patch(body).build(), token,
+        ) as JSONObject).toTvDevice()
+    }
 
     suspend fun deleteDevice(baseUrl: String, token: String, deviceId: String) {
         executeJson(
@@ -478,6 +497,28 @@ class BackendClient(private val context: Context) {
             )
         } finally {
             localCopy.delete()
+        }
+    }
+
+    suspend fun listUploadedApks(baseUrl: String, token: String): List<UploadedApk> {
+        val array = executeJson(request(baseUrl, "/api/upload/apk"), token) as JSONArray
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val filename = item.optString("filename").trim()
+                val url = item.optString("url").trim()
+                if (filename.isEmpty() || url.isEmpty()) continue
+                add(
+                    UploadedApk(
+                        filename = filename,
+                        sha256 = item.optString("sha256"),
+                        url = url,
+                        size = item.optLong("size"),
+                        packageName = item.optString("package_name"),
+                        minSdk = item.optInt("min_sdk"),
+                    ),
+                )
+            }
         }
     }
 

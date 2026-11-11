@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.Home
@@ -79,6 +80,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
@@ -723,6 +725,8 @@ private fun DevicesScreen(
     padding: PaddingValues,
     scanQr: () -> Unit,
 ) {
+    var renameTarget by remember { mutableStateOf<app.xingmu.remote.data.TvDevice?>(null) }
+    var renameName by rememberSaveable { mutableStateOf("") }
     if (state.devices.isEmpty() && !state.busy) {
         EmptyState(
             modifier = Modifier.padding(padding),
@@ -780,6 +784,10 @@ private fun DevicesScreen(
                 lanDirect = state.lanDevices.any { it.host == device.lanIp },
                 onToggle = { viewModel.toggleDevice(device.deviceId) },
                 onPrimary = { viewModel.makePrimary(device.deviceId) },
+                onRename = {
+                    renameTarget = device
+                    renameName = device.name
+                },
                 onDetails = { viewModel.showDeviceDetails(device.deviceId) },
             )
         }
@@ -832,6 +840,41 @@ private fun DevicesScreen(
             }
         }
     }
+    renameTarget?.let { device ->
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名设备") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "当前名称：${device.name}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = renameName,
+                        onValueChange = { if (it.length <= 64) renameName = it },
+                        label = { Text("新名称") },
+                        placeholder = { Text("输入电视名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.renameDevice(device.deviceId, renameName)
+                        renameTarget = null
+                    },
+                    enabled = renameName.trim().isNotEmpty() && renameName.trim() != device.name,
+                ) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+        )
+    }
 }
 
 @Composable
@@ -842,6 +885,7 @@ private fun DeviceItem(
     lanDirect: Boolean,
     onToggle: () -> Unit,
     onPrimary: () -> Unit,
+    onRename: () -> Unit,
     onDetails: () -> Unit,
 ) {
     Card(
@@ -895,12 +939,22 @@ private fun DeviceItem(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            if (selected) {
-                if (primary) {
-                    Icon(Icons.Default.CheckCircle, "当前主控", tint = MaterialTheme.colorScheme.primary)
-                } else {
-                    OutlinedButton(onClick = onPrimary, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                        Text("设为主控")
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(
+                    onClick = onRename,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Icon(Icons.Default.Edit, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("改名", style = MaterialTheme.typography.labelSmall)
+                }
+                if (selected) {
+                    if (primary) {
+                        Icon(Icons.Default.CheckCircle, "当前主控", tint = MaterialTheme.colorScheme.primary)
+                    } else {
+                        OutlinedButton(onClick = onPrimary, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                            Text("设为主控")
+                        }
                     }
                 }
             }
@@ -1071,6 +1125,7 @@ private fun ProfileScreen(
     var editOpen by rememberSaveable { mutableStateOf(false) }
     var passwordOpen by rememberSaveable { mutableStateOf(false) }
     var unbindOpen by rememberSaveable { mutableStateOf(false) }
+    var avatarDeleteOpen by rememberSaveable { mutableStateOf(false) }
     var aboutOpen by rememberSaveable { mutableStateOf(false) }
     var vipOpen by rememberSaveable { mutableStateOf(false) }
     var selectedPaymentPlan by remember { mutableStateOf<app.xingmu.remote.data.VipPlan?>(null) }
@@ -1147,6 +1202,10 @@ private fun ProfileScreen(
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column {
                 ProfileRow(Icons.Default.Badge, "个人资料", user.phone.ifBlank { "未填写手机号" }) { editOpen = true }
+                if (user.avatarUrl.isNotBlank()) {
+                    HorizontalDivider()
+                    ProfileRow(Icons.Default.Delete, "删除头像", "移除当前头像，恢复默认头像") { avatarDeleteOpen = true }
+                }
                 HorizontalDivider()
                 ProfileRow(Icons.Default.Security, "更换密码", "需验证旧密码") { passwordOpen = true }
                 if (primaryDevice != null) {
@@ -1229,6 +1288,25 @@ private fun ProfileScreen(
                 ) { Text("解除绑定") }
             },
             dismissButton = { TextButton(onClick = { unbindOpen = false }) { Text("取消") } },
+        )
+    }
+    if (avatarDeleteOpen) {
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            onDismissRequest = { avatarDeleteOpen = false },
+            title = { Text("删除头像") },
+            text = { Text("删除后头像将恢复为默认的字母头像，确定要删除吗？") },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.deleteAvatar(); avatarDeleteOpen = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0x33FF453A),
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("删除头像") }
+            },
+            dismissButton = { TextButton(onClick = { avatarDeleteOpen = false }) { Text("取消") } },
         )
     }
     if (aboutOpen) {
@@ -2114,6 +2192,7 @@ private fun CastScreen(
 ) {
     var url by rememberSaveable { mutableStateOf("") }
     var interval by rememberSaveable { mutableFloatStateOf(5f) }
+    var apkListOpen by rememberSaveable { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
     ) {
@@ -2192,7 +2271,18 @@ private fun CastScreen(
             OutlinedButton(onClick = pickApk, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.CloudUpload, null)
                 Spacer(Modifier.width(8.dp))
-                Text("选择并推送安装包")
+                Text("选择本地 APK")
+            }
+            OutlinedButton(
+                onClick = {
+                    apkListOpen = true
+                    viewModel.loadUploadedApks()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Icon(Icons.Default.Storage, null)
+                Spacer(Modifier.width(8.dp))
+                Text("从已上传列表选择")
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 20.dp))
@@ -2246,6 +2336,76 @@ private fun CastScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+    if (apkListOpen) {
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            onDismissRequest = { apkListOpen = false },
+            title = { Text("从已上传列表选择") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    when {
+                        state.uploadedApksLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                "正在读取已上传的安装包…",
+                                Modifier.padding(start = 10.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        state.uploadedApks.isEmpty() -> Text(
+                            "暂无已上传 APK",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        else -> state.uploadedApks.forEach { apk ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    apkListOpen = false
+                                    viewModel.installUploadedApk(apk)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                            ) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.CloudUpload,
+                                        null,
+                                        Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                        Text(
+                                            apk.filename,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            formatSize(apk.size),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.loadUploadedApks(force = true) },
+                    enabled = !state.uploadedApksLoading,
+                ) { Text("刷新") }
+            },
+            dismissButton = { TextButton(onClick = { apkListOpen = false }) { Text("取消") } },
+        )
     }
 }
 

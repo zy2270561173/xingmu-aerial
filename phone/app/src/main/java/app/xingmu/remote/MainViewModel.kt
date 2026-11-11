@@ -12,6 +12,7 @@ import app.xingmu.remote.data.CommandReceipt
 import app.xingmu.remote.data.ClientRelease
 import app.xingmu.remote.data.InstalledTvApp
 import app.xingmu.remote.data.TvDevice
+import app.xingmu.remote.data.UploadedApk
 import app.xingmu.remote.data.User
 import app.xingmu.remote.data.hasEntitlement
 import app.xingmu.remote.data.toTvDevice
@@ -84,6 +85,9 @@ data class AppUiState(
     val installedApps: List<InstalledTvApp> = emptyList(),
     val installedAppsDeviceId: String? = null,
     val appsLoading: Boolean = false,
+    val uploadedApks: List<UploadedApk> = emptyList(),
+    val uploadedApksLoading: Boolean = false,
+    val uploadedApksLoaded: Boolean = false,
     val pendingApprovals: List<TvDevice> = emptyList(),
     val approvalsLoading: Boolean = false,
     val availableUpdate: ClientRelease? = null,
@@ -407,6 +411,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteAvatar() {
+        val credential = token ?: return
+        viewModelScope.launch {
+            mutableState.value = state.value.copy(busy = true, message = "正在删除头像…")
+            runCatching {
+                backend.deleteAvatar(state.value.baseUrl, credential)
+                backend.getCurrentUser(state.value.baseUrl, credential)
+            }.onSuccess { user ->
+                mutableState.value = state.value.copy(
+                    user = user,
+                    busy = false,
+                    message = "头像已删除",
+                )
+            }.onFailure { fail(it) }
+        }
+    }
+
     fun changePassword(oldPassword: String, newPassword: String, confirmPassword: String) {
         val credential = token ?: return
         if (oldPassword.isBlank()) { updateMessage("请输入旧密码"); return }
@@ -691,6 +712,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         message = "旧设备及其历史数据已删除",
                     )
                     connectControl(primary)
+                }
+                .onFailure { fail(it) }
+        }
+    }
+
+    fun renameDevice(deviceId: String, name: String) {
+        val credential = token ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            updateMessage("请输入设备名称")
+            return
+        }
+        if (trimmed.length > 64) {
+            updateMessage("设备名称不能超过 64 个字符")
+            return
+        }
+        viewModelScope.launch {
+            mutableState.value = state.value.copy(busy = true, message = "正在重命名设备…")
+            runCatching { backend.renameDevice(state.value.baseUrl, credential, deviceId, trimmed) }
+                .onSuccess { device ->
+                    mutableState.value = state.value.copy(
+                        busy = false,
+                        message = "设备已重命名为 ${device.name}",
+                    )
+                    refreshDevices()
                 }
                 .onFailure { fail(it) }
         }
@@ -1200,6 +1246,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     mutableState.value = state.value.copy(busy = false)
                 }
                 .onFailure { fail(it) }
+        }
+    }
+
+    fun loadUploadedApks(force: Boolean = false) {
+        if (state.value.uploadedApksLoading) return
+        if (!force && state.value.uploadedApksLoaded) return
+        val credential = token ?: return
+        viewModelScope.launch {
+            mutableState.value = state.value.copy(uploadedApksLoading = true)
+            runCatching { backend.listUploadedApks(state.value.baseUrl, credential) }
+                .onSuccess { apks ->
+                    mutableState.value = state.value.copy(
+                        uploadedApks = apks,
+                        uploadedApksLoading = false,
+                        uploadedApksLoaded = true,
+                    )
+                }
+                .onFailure {
+                    mutableState.value = state.value.copy(
+                        uploadedApksLoading = false,
+                        uploadedApksLoaded = false,
+                        message = friendly(it),
+                    )
+                }
+        }
+    }
+
+    fun installUploadedApk(apk: UploadedApk) {
+        if (!requireEntitlement("app_install", "公网远程安装应用")) return
+        val targets = controllableTargets() ?: return
+        viewModelScope.launch {
+            val payload = JSONObject()
+                .put("url", apk.url)
+                .put("sha256", apk.sha256)
+                .put("filename", apk.filename)
+                .put("package_name", apk.packageName)
+                .put("min_sdk", apk.minSdk)
+                .put("size", apk.size)
+            mutableState.value = state.value.copy(message = "正在通知电视安装 ${apk.filename}…")
+            sendToTargets(targets, "install", payload, "安装 ${apk.filename}")
         }
     }
 
