@@ -47,6 +47,17 @@ git clone https://github.com/zy2270561173/xingmu-aerial.git
 cd xingmu-aerial
 ```
 
+**国内服务器拉不动 GitHub 时**，改用镜像代理地址（只读拉取可用，推送仍走本地代理）：
+
+```bash
+git clone https://v4.gh-proxy.org/https://github.com/zy2270561173/xingmu-aerial.git xingmu-aerial
+# 已克隆过的，直接改 origin：
+git remote set-url origin https://v4.gh-proxy.org/https://github.com/zy2270561173/xingmu-aerial.git
+git pull --ff-only
+```
+
+代理域名失效时，把 `v4.gh-proxy.org` 换成任意可用镜像（如 `ghproxy.net`、`gh-proxy.com`），后面的仓库路径保持不变。
+
 后端在 `backend/`，Web 控制台的构建产物放 `web/`（见第 6 节）。
 
 ---
