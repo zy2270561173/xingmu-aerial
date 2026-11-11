@@ -267,7 +267,7 @@ async def claim_pairing(
         connection.execute(
             """
             UPDATE devices
-            SET owner_user_id = ?, status = 'pending', enabled = 1, updated_at = ?
+            SET owner_user_id = ?, status = 'approved', enabled = 1, updated_at = ?
             WHERE id = ?
             """,
             (user["id"], now, pairing_row["device_pk"]),
@@ -275,12 +275,12 @@ async def claim_pairing(
         connection.execute(
             """
             INSERT INTO pending_agents(device_id, requested_at, state, reviewed_at, reviewed_by)
-            VALUES (?, ?, 'pending', NULL, NULL)
+            VALUES (?, ?, 'approved', ?, ?)
             ON CONFLICT(device_id) DO UPDATE SET
-                state = 'pending', requested_at = excluded.requested_at,
-                reviewed_at = NULL, reviewed_by = NULL
+                state = 'approved', requested_at = excluded.requested_at,
+                reviewed_at = excluded.reviewed_at, reviewed_by = excluded.reviewed_by
             """,
-            (device_id, now),
+            (device_id, now, now, user["id"]),
         )
         connection.execute(
             "UPDATE pairing_sessions SET claimed_at = ?, claimed_by = ? WHERE code_hash = ?",
@@ -313,8 +313,9 @@ async def claim_pairing(
     public["next_step"] = "open_device_approvals"
     public["approval_path"] = "/approvals"
     public["approval_api"] = "/api/device-approvals"
+    owner = user_public(user, _public_base(request))
     await request.app.state.hub.send_device(
-        device_id, {"type": "approval_result", "device": public}
+        device_id, {"type": "binding_updated", "owner": owner}
     )
     await request.app.state.hub.broadcast_control(
         "*", {"type": "device_updated", "device": public}

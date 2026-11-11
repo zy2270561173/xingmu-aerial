@@ -415,6 +415,7 @@ class ControlCenter(
         col.addView(back)
         row(back)
 
+        CastAgent.accountListener = { goTo(CcPage.Bind) }
         val status = CastAgent.accountStatus
         val owner = status?.optJSONObject("owner")
         // A pending TV answers 403 on the account endpoint but 200 on pairing: show the code as soon

@@ -75,6 +75,8 @@ object CastAgent {
     @Volatile var payment: JSONObject? = null
     @Volatile var paymentError: String = ""
     @Volatile var paymentBusy = false
+    /** Set by the open account page so a server-side binding change repaints it by itself. */
+    @Volatile var accountListener: (() -> Unit)? = null
     private var appContext: Context? = null
     private var client: OkHttpClient? = null
     private var listeners = mutableListOf<(State, String) -> Unit>()
@@ -232,6 +234,8 @@ object CastAgent {
         when (json.optString("type")) {
             "authenticated" -> {
                 Log.i(TAG, "authenticated by backend")
+                // A binding may have changed while the socket was down; repaint from the server.
+                refreshAccount(accountListener ?: {})
                 publish(State.Online, "已连接")
                 reportAppInventory(ws)
                 startHeartbeat(ws)
@@ -269,7 +273,9 @@ object CastAgent {
             }
             // The phone just claimed the pairing code: pull the account again so the page updates
             // without the user pressing 刷新.
-            "binding_updated" -> refreshAccount()
+            "binding_updated" -> refreshAccount(accountListener ?: {})
+            // Admin approval from the console lands as approval_result; same effect on the page.
+            "approval_result" -> refreshAccount(accountListener ?: {})
             "preview_start" -> startPreview(ws, bounded(json.optInt("fps", 1), 1, 3))
             "preview_stop" -> stopPreview()
             "error" -> Log.w(TAG, "backend error: " + json.optString("code"))
