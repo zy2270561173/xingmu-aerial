@@ -344,14 +344,15 @@ object CastAgent {
                 accountStatus = status
                 if (status == null || status.isNull("owner")) {
                     val pairing = deviceCall("/api/pairing/device", "POST")
-                    pairingCode = pairing?.optString("code").orEmpty()
-                    pairingUri = pairing?.optJSONObject("app_pairing")?.optString("uri").orEmpty()
-                        ?: pairing?.optString("uri").orEmpty()
+                    // The response nests the code under app_pairing; there is no top-level "code".
+                    val app = pairing?.optJSONObject("app_pairing")
+                    pairingCode = app?.optString("code").orEmpty()
+                    pairingUri = app?.optString("uri").orEmpty()
                 } else {
                     pairingCode = ""
                     pairingUri = ""
                 }
-                accountError = if (status == null) "无法获取账号信息（详见日志）" else ""
+                accountError = if (status == null && pairingCode.isEmpty()) "无法获取账号信息（详见日志）" else ""
             }
             accountBusy = false
             Handler(Looper.getMainLooper()).post(onDone)

@@ -446,13 +446,15 @@ class ControlCenter(
         row(back)
 
         val status = CastAgent.accountStatus
-        if (status == null) {
+        // A pending TV answers 403 on the account endpoint but 200 on pairing: show the code as soon
+        // as we have one, instead of the "cannot fetch" line.
+        if (status == null && CastAgent.pairingCode.isEmpty()) {
             if (!CastAgent.accountBusy && CastAgent.accountError.isEmpty()) CastAgent.refreshAccount { goTo(CcPage.Bind) }
             val text = if (CastAgent.accountError.isNotEmpty()) CastAgent.accountError else context.getString(R.string.bind_loading)
             col.add(context.label(text, 12f, 500, Ui.SECONDARY)
                 .apply { setPadding(Ui.pxi(14f), Ui.pxi(12f), 0, 0) })
         } else {
-            val owner = status.optJSONObject("owner")
+            val owner = status?.optJSONObject("owner")
             if (owner == null) {
                 infoRow(R.string.bind_account, context.getString(R.string.bind_unbound))
                 if (CastAgent.pairingCode.isNotEmpty()) {
