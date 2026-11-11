@@ -114,7 +114,7 @@ private fun LinearLayout.add(v: View, w: Int = LinearLayout.LayoutParams.MATCH_P
 }
 
 /** Control Center's pages, as the full app's CcPage: inputs only where Lite can list them, no updates. */
-enum class CcPage { Main, Boot, Inputs, Cast, About, Bind, Pay }
+enum class CcPage { Main, Boot, Inputs, Cast, About, Conn, Bind, Pay }
 
 /**
  * Control Center, as the full app's ControlCenter main page: the time and date with the network,
@@ -170,6 +170,7 @@ class ControlCenter(
             CcPage.Inputs -> inputs()
             CcPage.Cast -> cast()
             CcPage.About -> about()
+            CcPage.Conn -> conn()
             CcPage.Bind -> bind()
             CcPage.Pay -> pay()
         }
@@ -376,63 +377,13 @@ class ControlCenter(
         col.add(toggle, top = 10f)
         row(toggle)
 
-        // Remote keys (back/home/recents) need the accessibility service; say whether it is on and
-        // offer the system page when it is not.
-        val a11y = if (CastA11yService.connected) {
-            MenuRow(context, Glyph.Check, context.getString(R.string.cast_a11y_on))
-        } else {
-            MenuRow(context, Glyph.Shield, context.getString(R.string.cast_a11y_off)).apply {
-                action = { openAccessibilitySettings() }
-            }
+
+
+        val connRow = MenuRow(context, Glyph.Usb, context.getString(R.string.conn_title)).apply {
+            action = { goTo(CcPage.Conn) }
         }
-        col.add(a11y, top = 6f)
-        row(a11y)
-
-        // adbd is what the D-pad and screenshots go through; the port is 5555 on nearly every box
-        // but a few firmware builds move it, and then nothing else in this page would work.
-        val adbPort = MenuRow(context, Glyph.Usb, context.getString(R.string.cast_adb_port), CastConfig.adbPort.toString() + " ›").apply {
-            action = {
-                editText(context.getString(R.string.cast_adb_port), CastConfig.adbPort.toString(), numeric = true) { value ->
-                    value.toIntOrNull()?.let { CastConfig.setAdbPort(it) }
-                    goTo(CcPage.Cast)
-                }
-            }
-        }
-        col.add(adbPort, top = 6f)
-        row(adbPort)
-
-        // The URL is long enough to squeeze the row's own label, so the row says "修改" and the
-        // address sits on its own line underneath.
-        val backend = MenuRow(context, Glyph.Globe, context.getString(R.string.cast_backend), context.getString(R.string.cast_edit) + " ›").apply {
-            action = {
-                editText(context.getString(R.string.cast_backend), CastConfig.backendUrl) { value ->
-                    CastConfig.setBackendUrl(value)
-                    CastAgent.stop()
-                    if (CastConfig.configured) CastService.start(context)
-                    goTo(CcPage.Cast)
-                }
-            }
-        }
-        col.add(backend, top = 6f)
-        row(backend)
-        col.add(
-            context.label(CastConfig.backendUrl.ifEmpty { context.getString(R.string.cast_not_set) }, 11f, 500, Ui.TERTIARY)
-                .apply { setPadding(Ui.pxi(14f), 0, Ui.pxi(14f), 0) },
-            top = 2f,
-        )
-
-        val name = MenuRow(context, Glyph.Pencil, context.getString(R.string.cast_name), CastConfig.deviceName + " ›").apply {
-            action = {
-                editText(context.getString(R.string.cast_name), CastConfig.deviceName) { value ->
-                    CastConfig.setDeviceName(value)
-                    goTo(CcPage.Cast)
-                }
-            }
-        }
-        col.add(name)
-        row(name)
-
-
+        col.add(connRow, top = 8f)
+        row(connRow)
         // Account, membership and (while pending) the pairing code, all from device-auth endpoints.
         val account = MenuRow(context, Glyph.Shield, context.getString(R.string.bind_title)).apply {
             action = {
@@ -642,10 +593,6 @@ class ControlCenter(
         info(R.string.about_ip, CastNetwork.localIpv4())
         info(R.string.about_version, version(context))
         info(R.string.about_agent, if (CastAgent.runningNow) castStateText() else context.getString(R.string.cast_action_start))
-        info(R.string.about_id, CastConfig.deviceId)
-        info(R.string.about_backend, CastConfig.backendUrl.ifEmpty { context.getString(R.string.cast_not_set) })
-        info(R.string.about_dlna, "8766")
-        info(R.string.about_adb, CastConfig.adbPort.toString())
 
         // Attribution: this is a rebuilt desktop, the launcher itself is someone else's work.
         info(R.string.about_credit, context.getString(R.string.about_project))
@@ -662,6 +609,71 @@ class ControlCenter(
             }
         }
         col.add(reset, top = 10f)
+        row(reset)
+    }
+    /** 连接设置: accessibility, adb port, backend, device name, rebind — five rows plus the title. */
+    private fun conn() {
+        val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.conn_title)).apply {
+            action = { goTo(CcPage.Cast) }
+        }
+        col.addView(back)
+        row(back)
+
+        val a11y = if (CastA11yService.connected) {
+            MenuRow(context, Glyph.Check, context.getString(R.string.cast_a11y_on))
+        } else {
+            MenuRow(context, Glyph.Shield, context.getString(R.string.cast_a11y_off)).apply {
+                action = { openAccessibilitySettings() }
+            }
+        }
+        col.add(a11y, top = 6f)
+        row(a11y)
+
+        val adbPort = MenuRow(context, Glyph.Usb, context.getString(R.string.cast_adb_port), CastConfig.adbPort.toString()).apply {
+            action = {
+                editText(context.getString(R.string.cast_adb_port), CastConfig.adbPort.toString(), numeric = true) { value ->
+                    value.toIntOrNull()?.let { CastConfig.setAdbPort(it) }
+                    goTo(CcPage.Conn)
+                }
+            }
+        }
+        col.add(adbPort)
+        row(adbPort)
+
+        val backend = MenuRow(context, Glyph.Globe, context.getString(R.string.cast_backend), CastConfig.backendUrl).apply {
+            action = {
+                editText(context.getString(R.string.cast_backend), CastConfig.backendUrl) { value ->
+                    CastConfig.setBackendUrl(value)
+                    CastAgent.stop()
+                    if (CastConfig.configured) CastService.start(context)
+                    goTo(CcPage.Conn)
+                }
+            }
+        }
+        col.add(backend)
+        row(backend)
+
+        val name = MenuRow(context, Glyph.Pencil, context.getString(R.string.cast_name), CastConfig.deviceName).apply {
+            action = {
+                editText(context.getString(R.string.cast_name), CastConfig.deviceName) { value ->
+                    CastConfig.setDeviceName(value)
+                    goTo(CcPage.Conn)
+                }
+            }
+        }
+        col.add(name)
+        row(name)
+
+        val reset = MenuRow(context, Glyph.Trash, context.getString(R.string.cast_rebind)).apply {
+            action = {
+                CastAgent.stop()
+                CastConfig.rotateIdentity()
+                if (CastConfig.configured) CastService.start(context)
+                Toast.makeText(context, context.getString(R.string.cast_rebind_done), Toast.LENGTH_SHORT).show()
+                goTo(CcPage.Conn)
+            }
+        }
+        col.add(reset, top = 6f)
         row(reset)
     }
     private fun openAccessibilitySettings() {
