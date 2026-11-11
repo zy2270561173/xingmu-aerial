@@ -60,7 +60,7 @@ onBeforeUnmount(() => {
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark"><RadioTower :size="24" /></span>
-        <div><strong>星投屏</strong><small>控制中心</small></div>
+        <div><strong>星幕</strong><small>控制中心</small></div>
       </div>
       <nav class="nav-list" aria-label="主导航">
         <RouterLink

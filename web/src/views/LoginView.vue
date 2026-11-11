@@ -34,7 +34,7 @@ async function submit() {
     <section class="login-panel">
       <header>
         <span class="login-mark"><RadioTower :size="26" /></span>
-        <div><h1>星投屏控制中心</h1><p>设备、信令与 Agent 管理</p></div>
+        <div><h1>星幕控制中心</h1><p>设备、信令与 Agent 管理</p></div>
       </header>
       <Message v-if="error" type="warning" :content="error" />
       <Form layout="vertical" @submit.prevent="submit">

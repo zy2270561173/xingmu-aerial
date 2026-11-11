@@ -341,7 +341,7 @@ function capabilityLabel(value: unknown, kind: 'control' | 'capture') {
         <div class="remote-actions">
           <Button title="返回" @click="sendKey('BACK')"><RotateCcw :size="18" /> 返回</Button>
           <Button title="主页" @click="sendKey('HOME')"><Home :size="18" /> 主页</Button>
-          <Button type="primary" title="打开电视端星投屏" :loading="busy === 'foreground'" @click="foregroundTvApp"><Cast :size="18" /> 星投屏</Button>
+          <Button type="primary" title="打开电视端星幕" :loading="busy === 'foreground'" @click="foregroundTvApp"><Cast :size="18" /> 星幕</Button>
           <Button title="音量减" aria-label="音量减" @click="sendKey('VOLUME_DOWN')"><Volume1 :size="18" /></Button>
           <Button title="音量加" aria-label="音量加" @click="sendKey('VOLUME_UP')"><Volume2 :size="18" /></Button>
           <Button class="power-button" danger :disabled="!powerReady" title="远程关闭电视" @click="powerOpen = true"><Power :size="18" /> 关机</Button>

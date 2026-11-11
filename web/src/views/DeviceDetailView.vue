@@ -148,7 +148,7 @@ function screenLabel(width: unknown, height: unknown, refresh: unknown) {
 function capabilityLabel(value: unknown, kind: 'control' | 'capture') {
   const labels: Record<string, string> = kind === 'control'
     ? { accessibility: '无障碍全局控制', adb: 'ADB TCP 全局控制', root: 'Root 全局控制', player: '仅播放器', unavailable: '未就绪' }
-    : { accessibility: '无障碍全屏', adb: 'ADB TCP 全屏', root: 'Root 全屏', app_window: '仅星投屏页面', unavailable: '未就绪' };
+    : { accessibility: '无障碍全屏', adb: 'ADB TCP 全屏', root: 'Root 全屏', app_window: '仅星幕页面', unavailable: '未就绪' };
   return labels[String(value || 'unavailable')] || text(value);
 }
 
@@ -360,7 +360,7 @@ async function foregroundTvApp() {
   error.value = '';
   try {
     await sendCommand(deviceId, 'app', { action: 'foreground' });
-    notice.value = '已通知电视显示星投屏前台';
+    notice.value = '已通知电视显示星幕前台';
   } catch (reason) {
     error.value = readableError(reason);
   }
@@ -504,7 +504,7 @@ onBeforeUnmount(() => {
         <div class="settings-actions">
           <Button :disabled="!device.online" @click="openTvSettings('accessibility')"><Settings :size="16" /> 打开电视无障碍设置</Button>
           <Button :disabled="!device.online" @click="openTvSettings('wireless_debugging')"><Settings :size="16" /> 打开无线调试 / 开发者选项</Button>
-          <Button type="primary" :disabled="!device.online" @click="foregroundTvApp"><Home :size="16" /> 唤醒星投屏前台</Button>
+          <Button type="primary" :disabled="!device.online" @click="foregroundTvApp"><Home :size="16" /> 唤醒星幕前台</Button>
         </div>
         <p class="permission-note">Android 13 以上新版 Agent 通过系统级方向键控制，无需 Root。若厂商固件隐藏无线调试入口，普通 App 无法绕过系统权限强制开启，只能使用无障碍、厂商工程菜单或允许调试的固件。</p>
       </section>

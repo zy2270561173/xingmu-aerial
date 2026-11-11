@@ -121,7 +121,7 @@ export async function createHostedPlayerSession(url: string, mediaType = '') {
     await http.post<HostedPlayerSession>('/api/player/sessions', {
       url,
       media_type: mediaType,
-      title: '星投屏',
+      title: '星幕',
     })
   ).data;
 }
