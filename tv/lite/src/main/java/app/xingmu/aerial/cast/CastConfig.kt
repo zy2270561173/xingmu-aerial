@@ -45,7 +45,14 @@ object CastConfig {
         backendUrl = (prefs.getString("backend_url", null) ?: BuildConfig.CAST_BACKEND_URL).trimEnd('/')
         deviceId = prefs.getString("device_id", null) ?: defaultDeviceId(context)
         deviceToken = prefs.getString("device_token", null).orEmpty()
-        deviceName = prefs.getString("device_name", null) ?: defaultDeviceName()
+        // Old installs carry the pre-rename 星投屏 name; migrate it so both ends show 星幕.
+        val storedName = prefs.getString("device_name", null).orEmpty()
+        deviceName = when {
+            storedName.isEmpty() -> defaultDeviceName()
+            storedName.startsWith("星投屏") -> storedName.replaceFirst("星投屏", "星幕")
+                .also { prefs.edit().putString("device_name", it).apply() }
+            else -> storedName
+        }
         enabled = prefs.getBoolean("enabled", true)
         adbPort = prefs.getInt("adb_port", 5555).takeIf { it in 1..65535 } ?: 5555
     }
