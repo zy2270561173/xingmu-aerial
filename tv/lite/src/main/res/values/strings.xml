@@ -63,4 +63,8 @@
     <string name="pay_amount" translatable="false">金额</string>
     <string name="pay_status" translatable="false">状态</string>
     <string name="pay_scan_hint" translatable="false">用手机扫码支付，支付完成后点“刷新支付状态”</string>
-    <string name="pay_refresh" translatable="false">刷新支付状态</string></resources>
+    <string name="pay_refresh" translatable="false">刷新支付状态</string>    <string name="credits_title" translatable="false">版权与开源</string>
+    <string name="credits_license" translatable="false">许可</string>
+    <string name="credits_license_value" translatable="false">MIT（含上游版权声明）</string>
+    <string name="more_title" translatable="false">更多信息</string>
+</resources>

@@ -18,6 +18,7 @@ import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import com.google.zxing.BarcodeFormat
@@ -113,7 +114,7 @@ private fun LinearLayout.add(v: View, w: Int = LinearLayout.LayoutParams.MATCH_P
 }
 
 /** Control Center's pages, as the full app's CcPage: inputs only where Lite can list them, no updates. */
-enum class CcPage { Main, Boot, Inputs, Cast, About, Bind, Pay }
+enum class CcPage { Main, Boot, Inputs, Cast, About, More, Bind, Pay, Credits }
 
 /**
  * Control Center, as the full app's ControlCenter main page: the time and date with the network,
@@ -146,9 +147,9 @@ class ControlCenter(
         // Long pages (投屏设置 / 账号与会员) ran off the bottom edge with no way to reach the last
         // rows; give them a bounded height and a scroll bar.
         val tall = page != CcPage.Main
-        addView(panel, LayoutParams(Ui.pxi(300f), if (tall) Ui.pxi(508f) else LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-            topMargin = Ui.pxi(22f); rightMargin = Ui.pxi(32f)
-        })
+        // A modal card, centred like a dialog: the old right-edge plate read as a side sheet and its
+        // last rows kept spilling out of the rounded corners.
+        addView(panel, LayoutParams(Ui.pxi(430f), if (tall) Ui.pxi(470f) else LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         val scroll = android.widget.ScrollView(context).apply {
             isVerticalScrollBarEnabled = true
             isFillViewport = tall
@@ -157,12 +158,7 @@ class ControlCenter(
         }
         // Explicit height: MATCH_PARENT here measured against the Sheet rather than the panel, so the
         // last rows were drawn past the glass and over the wallpaper.
-        panel.clipChildren = true
-        panel.clipToPadding = true
-        panel.addView(
-            scroll,
-            LayoutParams(LayoutParams.MATCH_PARENT, if (tall) Ui.pxi(508f) else LayoutParams.WRAP_CONTENT),
-        )
+        panel.addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         when (page) {
             CcPage.Main -> if (Kids.active) kidsMain() else main()
             CcPage.Boot -> boot()
@@ -171,20 +167,10 @@ class ControlCenter(
             CcPage.About -> about()
             CcPage.Bind -> bind()
             CcPage.Pay -> pay()
+            CcPage.Credits -> credits()
+            CcPage.More -> more()
         }
-        // Keep the page title (the first row: "< 投屏设置") pinned above the scroll area; otherwise it
-        // scrolls away and the plate looks cut at the top.
-        if (tall && col.childCount > 1) {
-            val header = col.getChildAt(0)
-            col.removeViewAt(0)
-            val headerHeight = Ui.pxi(44f)
-            panel.addView(header, LayoutParams(LayoutParams.MATCH_PARENT, headerHeight))
-            (scroll.layoutParams as ViewGroup.MarginLayoutParams).apply {
-                topMargin = headerHeight
-                height = Ui.pxi(508f) - headerHeight
-            }
-            scroll.requestLayout()
-        }
+                }
         // In Kids mode on leaving it, as the full app.
         focusFirst(if (page == CcPage.Main && Kids.active && OutputDevice.showsVolume(context)) 1 else 0)
     }
@@ -448,8 +434,6 @@ class ControlCenter(
         col.add(about, top = 10f)
         row(about)
 
-        col.add(context.label(context.getString(R.string.cast_device_id) + " " + CastConfig.deviceId, 11f, 500, Ui.TERTIARY)
-            .apply { setPadding(Ui.pxi(14f), 0, Ui.pxi(14f), 0) }, top = 8f)
     }
 
     /**
@@ -616,6 +600,41 @@ class ControlCenter(
         }
         col.addView(view)
     }
+    /** Attribution page: the launcher is a rebuilt open-source project, say so plainly. */
+    /** Second half of 关于本机: addresses and identifiers, plus the rebind action. */
+    private fun more() {
+        val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.more_title)).apply {
+            action = { goTo(CcPage.About) }
+        }
+        col.addView(back)
+        row(back)
+        infoRow(R.string.about_id, CastConfig.deviceId)
+        infoRow(R.string.about_backend, CastConfig.backendUrl.ifEmpty { context.getString(R.string.cast_not_set) })
+        infoRow(R.string.about_dlna, "8766")
+        infoRow(R.string.about_adb, CastConfig.adbPort.toString())
+
+        val reset = MenuRow(context, Glyph.Trash, context.getString(R.string.cast_rebind)).apply {
+            action = {
+                CastAgent.stop()
+                CastConfig.rotateIdentity()
+                if (CastConfig.configured) CastService.start(context)
+                Toast.makeText(context, context.getString(R.string.cast_rebind_done), Toast.LENGTH_SHORT).show()
+                goTo(CcPage.More)
+            }
+        }
+        col.add(reset, top = 10f)
+        row(reset)
+    }
+    private fun credits() {
+        val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.credits_title)).apply {
+            action = { goTo(CcPage.About) }
+        }
+        col.addView(back)
+        row(back)
+        infoRow(R.string.about_credit, context.getString(R.string.about_project))
+        infoRow(R.string.about_restyled, version(context))
+        infoRow(R.string.credits_license, context.getString(R.string.credits_license_value))
+    }
     private fun about() {
         val back = MenuRow(context, Glyph.ChevronLeft, context.getString(R.string.about_title)).apply {
             action = { goTo(CcPage.Cast) }
@@ -646,22 +665,18 @@ class ControlCenter(
         info(R.string.about_dlna, "8766")
         info(R.string.about_adb, CastConfig.adbPort.toString())
 
-        // Attribution: this is a rebuilt desktop, the launcher itself is someone else's work.
-        info(R.string.about_credit, context.getString(R.string.about_project))
-        info(R.string.about_restyled, version(context))
-
-        // Lives on the About page so 投屏设置 stays short enough to fit its plate.
-        val reset = MenuRow(context, Glyph.Trash, context.getString(R.string.cast_rebind)).apply {
-            action = {
-                CastAgent.stop()
-                CastConfig.rotateIdentity()
-                if (CastConfig.configured) CastService.start(context)
-                Toast.makeText(context, context.getString(R.string.cast_rebind_done), Toast.LENGTH_SHORT).show()
-                goTo(CcPage.About)
-            }
+        // Attribution moved to its own page so 关于本机 fits the plate without scrolling.
+        val moreRow = MenuRow(context, Glyph.Info, context.getString(R.string.more_title)).apply {
+            action = { goTo(CcPage.More) }
         }
-        col.add(reset, top = 10f)
-        row(reset)
+        col.add(moreRow, top = 8f)
+        row(moreRow)
+        val credits = MenuRow(context, Glyph.Info, context.getString(R.string.credits_title)).apply {
+            action = { goTo(CcPage.Credits) }
+        }
+        col.add(credits, top = 8f)
+        row(credits)
+
     }
     private fun openAccessibilitySettings() {
         val opened = runCatching {
