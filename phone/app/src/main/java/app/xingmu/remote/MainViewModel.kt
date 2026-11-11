@@ -1249,10 +1249,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startRefreshLoop() {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
+            var tick = 0
             while (true) {
                 delay(8_000)
+                tick++
                 refreshDevices()
                 checkMobileUpdate()
+                // Approval and membership changes are broadcast to "*", which the phone does not
+                // subscribe to, so poll them on a slower cadence instead of staying stale.
+                if (state.value.authenticated && tick % 3 == 0) {
+                    refreshApprovals()
+                    refreshVip()
+                }
             }
         }
     }
