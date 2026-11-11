@@ -676,7 +676,12 @@ object CastAgent {
 
     private fun localIpv4(): String = CastNetwork.localIpv4()
 
-    private fun BuildConfigName(): String = "0.1.0-lite-cast"
+    /** Real versionName from the manifest; the old hardcoded string made the backend show 0.1.0. */
+    private fun BuildConfigName(): String = runCatching {
+        val ctx = appContext ?: return@runCatching ""
+        @Suppress("DEPRECATION")
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName.orEmpty()
+    }.getOrDefault("")
 
     private fun nowSeconds(): Long = System.currentTimeMillis() / 1000L
 
