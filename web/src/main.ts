@@ -6,9 +6,9 @@ import './styles/main.less';
 import './styles/tokens.less';
 import './styles/aerial.less';
 
-// The Aerial theme is opt-in by attribute so the base stylesheet stays intact underneath it and
-// the component kit's runtime :root cannot outrank the token layer (it is injected after the app
-// bundle; an attribute selector wins on specificity instead of load order).
+// The theme attribute is already present on <html> in index.html so the first paint is dark.
+// Setting it again here keeps dev-server and SPA boot paths identical, and the attribute selector
+// still outranks the component kit's runtime :root injection.
 document.documentElement.dataset.theme = 'aerial';
 
 createApp(App).use(createPinia()).use(router).mount('#app');

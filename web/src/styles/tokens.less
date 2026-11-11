@@ -10,20 +10,49 @@ html[data-theme="aerial"] {
   color-scheme: dark;
 
   /* Palette */
-  --aerial-bg: #000000;
+  --aerial-bg: #071018;
   --aerial-label: #ffffff;
-  --aerial-label-2: rgba(235, 235, 245, 0.6);
-  --aerial-label-3: rgba(235, 235, 245, 0.3);
-  --aerial-glass: rgba(32, 32, 34, 0.9);
-  --aerial-glass-soft: rgba(28, 28, 30, 0.72);
-  --aerial-fill: rgba(120, 120, 128, 0.18);
-  --aerial-fill-strong: rgba(120, 120, 128, 0.32);
-  --aerial-hairline: rgba(255, 255, 255, 0.1);
+  --aerial-label-2: rgba(235, 235, 245, 0.64);
+  --aerial-label-3: rgba(235, 235, 245, 0.36);
+  --aerial-glass: rgba(13, 20, 27, 0.86);
+  --aerial-glass-soft: rgba(12, 19, 27, 0.62);
+  --aerial-fill: rgba(255, 255, 255, 0.07);
+  --aerial-fill-strong: rgba(255, 255, 255, 0.12);
+  --aerial-hairline: rgba(255, 255, 255, 0.14);
   --aerial-green: #30d158;
   --aerial-orange: #ff9f0a;
   --aerial-red: #ff453a;
   --aerial-focus: #f5f5f7;
   --aerial-on-focus: #1d1d1f;
+
+  /*
+   * Aerial glass tokens used by the console chrome, cards and controls.
+   * --glass-bg keeps the wallpaper readable through the plate; --glass-bg-strong is for overlays
+   * (modals, drawers) where contrast matters more than transparency.
+   */
+  --glass-bg: rgba(10, 17, 24, 0.60);
+  --glass-bg-soft: rgba(10, 17, 24, 0.44);
+  --glass-bg-strong: rgba(8, 14, 20, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-border-strong: rgba(255, 255, 255, 0.28);
+  --glass-blur: 18px;
+  --glass-blur-strong: 28px;
+  --glass-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --accent: #3fd0c9;
+  --accent-strong: #2f80ed;
+  --accent-soft: rgba(63, 208, 201, 0.16);
+  --accent-line: rgba(63, 208, 201, 0.38);
+  --accent-gradient: linear-gradient(135deg, #3fd0c9 0%, #2f80ed 100%);
+  --text: #f3fafc;
+  --text-dim: rgba(226, 239, 244, 0.66);
+  --text-faint: rgba(226, 239, 244, 0.42);
+  --field-bg: rgba(255, 255, 255, 0.07);
+  --field-bg-hover: rgba(255, 255, 255, 0.10);
+  --field-bg-focus: rgba(255, 255, 255, 0.13);
+  --radius-card: 20px;
+  --radius-panel: 24px;
+  --radius-field: 14px;
 
   /* Radii: tile 12, floating panel 22-24, settings sheet 28, pill 50% */
   --aerial-radius-tile: 12px;
@@ -61,21 +90,21 @@ html[data-theme="aerial"] {
   --aerial-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 
   /* Remap the component kit onto the same palette. */
-  --animal-primary-color: #0a84ff;
-  --animal-primary-color-hover: #3f9cff;
-  --animal-primary-color-active: #0060df;
-  --animal-primary-color-bg: rgba(10, 132, 255, 0.16);
+  --animal-primary-color: #3fd0c9;
+  --animal-primary-color-hover: #63e2db;
+  --animal-primary-color-active: #2bb8b2;
+  --animal-primary-color-bg: rgba(63, 208, 201, 0.16);
   --animal-success-color: #30d158;
   --animal-warning-color: #ff9f0a;
   --animal-error-color: #ff453a;
-  --animal-text-color: #ffffff;
-  --animal-text-color-secondary: rgba(235, 235, 245, 0.6);
-  --animal-text-color-disabled: rgba(235, 235, 245, 0.3);
-  --animal-border-color: rgba(255, 255, 255, 0.1);
-  --animal-border-color-hover: rgba(255, 255, 255, 0.22);
-  --animal-bg-color: #000000;
-  --animal-bg-color-secondary: rgba(32, 32, 34, 0.9);
-  --animal-bg-color-disabled: rgba(120, 120, 128, 0.18);
+  --animal-text-color: #f3fafc;
+  --animal-text-color-secondary: rgba(226, 239, 244, 0.66);
+  --animal-text-color-disabled: rgba(226, 239, 244, 0.36);
+  --animal-border-color: rgba(255, 255, 255, 0.15);
+  --animal-border-color-hover: rgba(255, 255, 255, 0.30);
+  --animal-bg-color: rgba(10, 19, 27, 0.72);
+  --animal-bg-color-secondary: rgba(255, 255, 255, 0.08);
+  --animal-bg-color-disabled: rgba(255, 255, 255, 0.04);
   --animal-border-radius-sm: 10px;
   --animal-border-radius-base: 14px;
   --animal-border-radius-lg: 20px;

@@ -90,22 +90,8 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style>
-/* 必应每日一图：后端 /api/wallpaper/bing 代理并缓存，避免 CORS 与客户端网络差异 */
-html,
-body {
-  margin: 0;
-  min-height: 100vh;
-  background-color: #0b0d0c;
-  background-image: linear-gradient(180deg, rgba(8, 10, 9, 0.45), rgba(8, 10, 9, 0.72)),
-    url("/api/wallpaper/bing");
-  background-position: center;
-  background-size: cover;
-  background-attachment: fixed;
-}
-/* 让壁纸透出来：根容器与登录页原本自带不透明底色 */
-#app,
-.login-page {
-  background: transparent !important;
-}
-</style>
+<!--
+  The Bing wallpaper and the glass surfaces live in src/styles/aerial.less, which is imported last
+  in main.ts. Defining the same background here lost to the theme block on specificity alone, so the
+  console rendered a black screen even though the image request was 200.
+-->
