@@ -306,12 +306,62 @@ object CastAgent {
             }
         }.getOrElse { false to ("安装异常：" + (it.message ?: "unknown")) }
     }
+    /** media: play/pause/stop/seek against whatever player is currently bound. */
+    private fun mediaCommand(payload: JSONObject): Pair<Boolean, String> {
+        val action = payload.optString("action").ifEmpty { payload.optString("command") }.lowercase()
+        return when (action) {
+            "play", "resume" -> { CastPlayer.resume(); true to "已继续播放" }
+            "pause" -> { CastPlayer.pause(); true to "已暂停" }
+            "stop" -> { CastPlayer.stop(); true to "已停止" }
+            "seek" -> {
+                val ms = payload.optLong("position_ms", payload.optLong("position", 0L))
+                CastPlayer.seek(ms)
+                true to "已跳转到 $ms ms"
+            }
+            "status" -> true to (CastPlayer.state.name.lowercase() + " " + CastPlayer.positionMs + "/" + CastPlayer.durationMs)
+            else -> false to "不支持的播放动作：$action"
+        }
+    }
+
+    /** power: sleep/wake/toggle, pressed through the TV's own adbd key injector. */
+    private fun powerCommand(payload: JSONObject): Pair<Boolean, String> {
+        val ctx = appContext ?: return false to "服务未就绪"
+        val action = payload.optString("action").ifEmpty { "toggle" }.lowercase()
+        val code = when (action) {
+            "sleep", "off", "standby" -> 223
+            "wake", "on" -> 224
+            else -> 26
+        }
+        val ok = LegacyAdbClient.sendKey(ctx, CastConfig.adbPort, code)
+        return if (ok) true to "已发送电源指令：$action" else false to "电源指令失败（adb 不可用）"
+    }
+
+    /** settings: the ones a TV agent can really change without system permissions. */
+    private fun settingsCommand(payload: JSONObject): Pair<Boolean, String> {
+        val ctx = appContext ?: return false to "服务未就绪"
+        val name = payload.optString("name").ifEmpty { payload.optString("key") }.lowercase()
+        if (name == "volume" || name == "音量") {
+            val value = payload.optInt("value", -1)
+            if (value !in 0..100) return false to "音量取值 0-100"
+            val audio = ctx.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, value * max / 100, 0)
+            return true to "音量已设为 $value"
+        }
+        return false to "不支持的设置项：$name"
+    }
     /** One remote command. Everything the launcher cannot really do is reported as failed. */
     private fun executeCommand(type: String, payload: JSONObject): Pair<Boolean, String> = when (type) {
         "webplayer" -> openWebPlayer(payload)
         "app" -> if (payload.optString("action") == "foreground") bringSelfToFront() else launchApp(payload)
         "key" -> sendKey(payload)
         "install" -> installFromUrl(payload)
+        "media" -> mediaCommand(payload)
+        "power" -> powerCommand(payload)
+        "settings" -> settingsCommand(payload)
+        "switch" -> false to "本机不支持输入源切换"
+        "snapshot" -> false to "快照由服务端抓取，本机不重复上报"
+        "p2p" -> false to "P2P 由服务端会话驱动，不需要指令"
         else -> false to "Aerial Lite 暂不支持该指令：$type"
     }
 
