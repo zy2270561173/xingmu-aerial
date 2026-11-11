@@ -201,11 +201,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 前端构建产物随后端一起发布：同源，免去单独配站点与跨域
     webui_dir = BASE_DIR / "webui"
     if (webui_dir / "index.html").is_file():
-        app.mount("/console/assets", StaticFiles(directory=webui_dir / "assets"), name="console-assets")
+        app.mount("/admin/assets", StaticFiles(directory=webui_dir / "assets"), name="admin-assets")
 
-        @app.get("/console", include_in_schema=False)
-        @app.get("/console/{path:path}", include_in_schema=False)
-        async def console_spa(path: str = "") -> FileResponse:
+        @app.get("/admin", include_in_schema=False)
+        @app.get("/admin/{path:path}", include_in_schema=False)
+        async def admin_spa(path: str = "") -> FileResponse:
             candidate = (webui_dir / path).resolve()
             if path and webui_dir.resolve() in candidate.parents and candidate.is_file():
                 return FileResponse(candidate)
