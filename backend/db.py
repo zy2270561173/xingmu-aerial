@@ -133,6 +133,8 @@ CREATE TABLE IF NOT EXISTS apks (
     stored_name TEXT NOT NULL UNIQUE,
     sha256 TEXT NOT NULL,
     size INTEGER NOT NULL,
+    package_name TEXT NOT NULL DEFAULT '',
+    min_sdk INTEGER NOT NULL DEFAULT 0,
     uploaded_by INTEGER,
     created_at INTEGER NOT NULL,
     FOREIGN KEY(uploaded_by) REFERENCES users(id)
@@ -370,6 +372,17 @@ class Database:
             }
             for name, statement in user_column_migrations.items():
                 if name not in user_columns:
+                    connection.execute(statement)
+            apk_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(apks)").fetchall()
+            }
+            apk_column_migrations = {
+                "package_name": "ALTER TABLE apks ADD COLUMN package_name TEXT NOT NULL DEFAULT ''",
+                "min_sdk": "ALTER TABLE apks ADD COLUMN min_sdk INTEGER NOT NULL DEFAULT 0",
+            }
+            for name, statement in apk_column_migrations.items():
+                if name not in apk_columns:
                     connection.execute(statement)
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique "
