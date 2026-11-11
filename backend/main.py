@@ -156,3 +156,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+if __name__ == "__main__":
+    # 让「python main.py」也能直接跑起来：宝塔等面板常用这种启动方式。
+    import os
+
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("TVCAST_HOST", "0.0.0.0"),
+        port=int(os.getenv("TVCAST_PORT", "18000")),
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
