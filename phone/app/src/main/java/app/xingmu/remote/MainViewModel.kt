@@ -461,12 +461,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun reviewApproval(deviceId: String, approve: Boolean) {
+    fun reviewApproval(deviceId: String, approve: Boolean, ownerUserId: Int? = null) {
         val credential = token ?: return
         viewModelScope.launch {
             mutableState.value = state.value.copy(busy = true)
             runCatching {
-                backend.reviewApproval(state.value.baseUrl, credential, deviceId, approve)
+                backend.reviewApproval(state.value.baseUrl, credential, deviceId, approve, ownerUserId)
             }.onSuccess {
                 mutableState.value = state.value.copy(
                     pendingApprovals = state.value.pendingApprovals.filterNot { it.deviceId == deviceId },

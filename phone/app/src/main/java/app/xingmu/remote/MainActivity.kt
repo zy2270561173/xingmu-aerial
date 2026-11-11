@@ -1638,6 +1638,8 @@ private fun PasswordField(value: String, onValueChange: (String) -> Unit, label:
 
 @Composable
 private fun ApprovalsScreen(state: AppUiState, viewModel: MainViewModel, padding: PaddingValues) {
+    // Approving hands the TV to the approver unless an owner is sent, so the second tap confirms it.
+    var confirmApprove by remember { mutableStateOf("") }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(16.dp),
@@ -1707,7 +1709,7 @@ private fun ApprovalsScreen(state: AppUiState, viewModel: MainViewModel, padding
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
                         OutlinedButton(onClick = { viewModel.reviewApproval(device.deviceId, false) }, enabled = !state.busy) { Text("拒绝") }
-                        Button(onClick = { viewModel.reviewApproval(device.deviceId, true) }, enabled = !state.busy) { Text("批准添加") }
+                        Button(onClick = { if (confirmApprove == device.deviceId) { confirmApprove = ""; viewModel.reviewApproval(device.deviceId, true) } else confirmApprove = device.deviceId }, enabled = !state.busy) { Text(if (confirmApprove == device.deviceId) "确认归属到我" else "批准添加") }
                     }
                 }
             }

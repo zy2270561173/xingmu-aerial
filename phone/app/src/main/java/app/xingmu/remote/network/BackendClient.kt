@@ -190,10 +190,11 @@ class BackendClient(private val context: Context) {
         token: String,
         deviceId: String,
         approve: Boolean,
+        ownerUserId: Int? = null,
     ) = (executeJson(
         request(baseUrl, "/api/device-approvals/$deviceId/${if (approve) "approve" else "reject"}")
             .newBuilder().post(
-            JSONObject().toString().toRequestBody(JSON),
+            (ownerUserId?.let { JSONObject().put("owner_user_id", it) } ?: JSONObject()).toString().toRequestBody(JSON),
         ).build(),
         token,
     ) as JSONObject).toTvDevice()
