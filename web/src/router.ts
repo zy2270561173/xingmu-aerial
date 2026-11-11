@@ -10,7 +10,7 @@ import UsersView from './views/UsersView.vue';
 import SalesView from './views/SalesView.vue';
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/', redirect: '/devices' },

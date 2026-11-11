@@ -201,20 +201,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 前端构建产物随后端一起发布：同源，免去单独配站点与跨域
     webui_dir = BASE_DIR / "webui"
     if (webui_dir / "index.html").is_file():
-        app.mount("/assets", StaticFiles(directory=webui_dir / "assets"), name="webui-assets")
+        app.mount("/console/assets", StaticFiles(directory=webui_dir / "assets"), name="console-assets")
 
-        @app.get("/", include_in_schema=False)
-        async def webui_root() -> FileResponse:
-            return FileResponse(webui_dir / "index.html")
-
-        @app.get("/{full_path:path}", include_in_schema=False)
-        async def webui_spa(full_path: str) -> FileResponse:
-            if full_path.startswith(("api/", "static/", "ws/", "player", "docs", "openapi")):
-                raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-            candidate = (webui_dir / full_path).resolve()
-            if webui_dir.resolve() in candidate.parents and candidate.is_file():
+        @app.get("/console", include_in_schema=False)
+        @app.get("/console/{path:path}", include_in_schema=False)
+        async def console_spa(path: str = "") -> FileResponse:
+            candidate = (webui_dir / path).resolve()
+            if path and webui_dir.resolve() in candidate.parents and candidate.is_file():
                 return FileResponse(candidate)
             return FileResponse(webui_dir / "index.html")
+
+    # 根路径是落地页（下载页），控制台在 /console
+    landing_page = BASE_DIR / "landing" / "index.html"
+    if landing_page.is_file():
+
+        @app.get("/", include_in_schema=False)
+        @app.get("/index", include_in_schema=False)
+        async def landing() -> FileResponse:
+            return FileResponse(landing_page)
+
     return app
 
 

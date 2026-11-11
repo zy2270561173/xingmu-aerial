@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const webPort = Number(env.VITE_DEV_PORT || 15173);
 
   return {
+    base: '/console/',
     plugins: [vue()],
     server: {
       port: webPort,
