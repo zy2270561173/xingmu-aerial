@@ -20,6 +20,7 @@ import android.os.Looper
 import android.os.SystemClock
 import app.xingmu.aerial.cast.CastConfig
 import app.xingmu.aerial.cast.CastService
+import app.xingmu.aerial.cast.MusicActivity
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -50,6 +51,8 @@ class HomeActivity : Activity(), HomeView.Host {
     private var folderApps: Map<String, List<AppEntry>> = emptyMap()
     private var hiddenApps: List<AppEntry> = emptyList()
     private val folderTiles = HashMap<String, Pair<String, Bitmap>>()
+    /** Made once: [arrange] runs on every install and reload, and a tile bitmap per run would pile up. */
+    private val musicTile by lazy { MusicTile.entry(this) }
     private val work = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val proxy by lazy { FilmProxy(applicationContext) }
@@ -316,7 +319,13 @@ class HomeActivity : Activity(), HomeView.Host {
         // Every app Kids and Elders mode can show: Home's with each folder's in its place, then the hidden ones.
         kidsCandidates = arranged.home.flatMap { e -> e.folder?.let { arranged.folders[it.id].orEmpty() } ?: listOf(e) } + arranged.hidden
         if (Kids.enabled) Kids.notePackages(kidsCandidates.filter { it.key in Kids.allowed }.mapTo(HashSet()) { it.component.packageName })
-        home.setApps(if (Kids.active) Kids.allowed.mapNotNull { k -> kidsCandidates.firstOrNull { it.key == k } } else arranged.home)
+        // 点歌台 is fixed: in front of the apps in the normal Home, absent from Kids mode's short list.
+        val shown = if (Kids.active) {
+            Kids.allowed.mapNotNull { k -> kidsCandidates.firstOrNull { it.key == k } }
+        } else {
+            listOf(musicTile) + arranged.home
+        }
+        home.setApps(shown)
         (panels.lastOrNull() as? FolderView)?.let { open ->
             val inside = folderApps[open.folderId]
             if (inside.isNullOrEmpty()) closePanel() else open.setApps(inside)
@@ -342,6 +351,12 @@ class HomeActivity : Activity(), HomeView.Host {
     // ---- HomeView.Host ----
 
     override fun launch(app: AppEntry) {
+        // The jukebox is not an installed launcher activity: an explicit start is what keeps this
+        // firmware from resetting the Home task and dropping the intent (M08, Android 4.4).
+        if (app.key == MusicTile.KEY) {
+            MusicActivity.start(this)
+            return
+        }
         // Kids and Elders mode opens only its own tiles, and none while locked.
         if (Kids.active && (app.key !in Kids.allowed || Kids.lock != null)) return
         // The TV's settings sit behind the parental PIN, as in the full app.
@@ -389,6 +404,8 @@ class HomeActivity : Activity(), HomeView.Host {
     }
 
     override fun openMenu(app: AppEntry, tile: android.view.View) {
+        // The jukebox is a fixed tile: no move, folder or hide menu, like the full app's own entries.
+        if (app.key == MusicTile.KEY) return
         // Nothing to rearrange in Kids and Elders mode (#1013), nor on a locked Home: say where it unlocks.
         if (Kids.active) return
         if (LiteSettings.homeLocked) { Toast.makeText(this, getString(R.string.home_locked_notice), Toast.LENGTH_LONG).show(); return }

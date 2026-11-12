@@ -336,6 +336,27 @@ object CastAgent {
         return if (ok) true to "已发送电源指令：$action" else false to "电源指令失败（adb 不可用）"
     }
 
+    /** 点歌台: join the request to the jukebox's queue and open it, even from Home. */
+    private fun musicCommand(payload: JSONObject): Pair<Boolean, String> {
+        val mid = payload.optString("mid").trim()
+        if (mid.isEmpty()) return false to "缺少歌曲 mid"
+        val ctx = appContext ?: return false to "服务未就绪"
+        val song = MusicSong(
+            mid = mid,
+            name = payload.optString("name").ifEmpty { mid },
+            singer = payload.optString("singer"),
+            cover = payload.optString("cover"),
+            album = payload.optString("album"),
+            interval = payload.optInt("interval", 0),
+            quality = payload.optString("quality").ifEmpty { "MP3_320" },
+            url = "",
+            directUrl = payload.optString("url"),
+        )
+        MusicQueue.enqueue(song)
+        MusicActivity.start(ctx)
+        return true to ("已点：" + song.name)
+    }
+
     /** settings: the ones a TV agent can really change without system permissions. */
     private fun settingsCommand(payload: JSONObject): Pair<Boolean, String> {
         val ctx = appContext ?: return false to "服务未就绪"
@@ -357,6 +378,7 @@ object CastAgent {
         "key" -> sendKey(payload)
         "install" -> installFromUrl(payload)
         "media" -> mediaCommand(payload)
+        "music" -> musicCommand(payload)
         "power" -> powerCommand(payload)
         "settings" -> settingsCommand(payload)
         "switch" -> false to "本机不支持输入源切换"
