@@ -343,10 +343,10 @@ class MusicActivity : Activity() {
         val song = snapshot.song
         if (song == null) {
             if (currentMid.isNotEmpty() || titleView.text.isEmpty()) {
-                titleView.text = "点歌台"
-                singerView.text = "手机扫码点歌，或等待电视被点歌"
+                titleView.text = "暂无点歌"
+                singerView.text = "请扫描右侧二维码进行点歌吧"
                 albumView.text = ""
-                qualityBadge.text = "待机"
+                qualityBadge.text = "空闲"
                 timeView.text = ""
             }
             currentMid = ""

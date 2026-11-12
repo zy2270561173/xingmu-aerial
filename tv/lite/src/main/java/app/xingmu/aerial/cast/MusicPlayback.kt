@@ -334,6 +334,11 @@ object MusicPlayback {
                     if (MusicQueue.advance() != null) {
                         doPlayCurrent(0L)
                     } else {
+                        // 队列空了：清掉当前曲，界面回到「暂无点歌」，而不是停在最后一首
+                        MusicQueue.clear()
+                        duration = 0L
+                        position = 0L
+                        releasePlayer()
                         status = "播放结束"
                         notifyState()
                     }
