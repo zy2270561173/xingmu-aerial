@@ -49,7 +49,7 @@ _map_lock = threading.RLock()
 _signer_lock = threading.Lock()
 _entries: dict[str, "_Entry"] = {}
 _signer = None
-_signer_error = ""
+_signer_loaded = False
 
 
 class _Entry:
@@ -74,24 +74,36 @@ def adb_key_path() -> str:
 
 
 def _load_signer():
-    """Loads ~/.android/adbkey once; same key file the adb command line would use."""
-    global _signer, _signer_error
-    if _signer is not None:
+    """Loads ~/.android/adbkey once; returns None when there is no key.
+
+    Standard Android 4.2+ adbd requires an RSA key, but plenty of 4.x TV firmwares
+    (this M08 included) have ro.adb.secure=1 yet accept a keyless CNXN and carry no
+    /data/misc/adb/adb_keys. So a missing key is not an error: try keyless first and
+    let the device decide. If it does require auth, adb-shell raises
+    AdbAuthenticationFailedException and the caller reports that.
+    """
+    global _signer, _signer_loaded
+    if _signer_loaded:
         return _signer
     with _signer_lock:
-        if _signer is not None:
+        if _signer_loaded:
             return _signer
         path = adb_key_path()
+        _signer_loaded = True
         if not os.path.isfile(path):
-            _signer_error = (
-                f"adb key not found: {path} (copy ~/.android/adbkey and adbkey.pub, "
-                "or set TVCAST_ADBKEY)"
+            logger.info(
+                "pyadb: no adbkey at %s; trying keyless adb (4.x vendor adbd often allows it)",
+                path,
             )
-            raise RuntimeError(_signer_error)
+            return None
         if not os.path.isfile(path + ".pub"):
-            _signer_error = f"adb public key not found: {path}.pub"
-            raise RuntimeError(_signer_error)
-        _signer = PythonRSASigner.FromRSAKeyPath(path)
+            logger.warning("pyadb: %s.pub missing; trying keyless adb", path)
+            return None
+        try:
+            _signer = PythonRSASigner.FromRSAKeyPath(path)
+        except Exception as error:  # noqa: BLE001 - a broken key must not block keyless TVs
+            logger.warning("pyadb: cannot load %s (%s); trying keyless adb", path, error)
+            return None
         return _signer
 
 
@@ -115,11 +127,11 @@ def _connect(serial: str):
         host, port, default_transport_timeout_s=_CONNECT_TIMEOUT_SECONDS
     )
     device.connect(
-        rsa_keys=[signer],
+        rsa_keys=[signer] if signer is not None else None,
         auth_timeout_s=_AUTH_TIMEOUT_SECONDS,
         read_timeout_s=_READ_TIMEOUT_SECONDS,
     )
-    logger.info("pyadb: connected to %s", serial)
+    logger.info("pyadb: connected to %s%s", serial, " (keyless)" if signer is None else "")
     return device
 
 

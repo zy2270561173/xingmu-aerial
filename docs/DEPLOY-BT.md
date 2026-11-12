@@ -203,7 +203,7 @@ location / {
 
 ## 7. adb（按键 / 安装 / 截图）
 
-### 内置隧道（推荐，电视 1.34 / 后端 0.14.15 起）
+### 内置隧道（推荐，电视 1.34 / 后端 0.14.16 起）
 
 电视端 1.34 会主动连后端的 `/ws/tunnel`，后端为它分配 `127.0.0.1:15000` 起的端口，
 写进设备表的 `lan_ip/adb_port`，并自己执行 `adb connect 127.0.0.1:<port>`。服务器只要求：
@@ -211,8 +211,11 @@ location / {
 1. **adb 或纯 Python 二选一**：`PATH` 里有 `adb` 就走原来的 adb 快路径；没有 adb 时后端
    自动用仓库自带的纯 Python ADB（`backend/vendor/` 里的 `adb_shell` + `rsa` + `pyasn1`，
    无需额外 pip 包，也不需要 `apt install android-tools-adb`）。
-   两条路都需要电视已授权的 `adbkey`/`adbkey.pub`：默认读 `~/.android/adbkey`，Docker 里
-   把它挂到 `/app/.android/`，或用环境变量 `TVCAST_ADBKEY` 指到别的路径；
+   **key 是可选的**：有 `adbkey`/`adbkey.pub` 就用（标准 Android 4.2+ 的 adbd 会校验）；
+   没有 key 时纯 Python 客户端会先试 keyless——不少 4.x 电视（这台 M08 就是）虽然
+   `ro.adb.secure=1`，但 `/data/misc/adb/adb_keys` 根本不存在，adbd 不校验 key。
+   需要 key 时默认读 `~/.android/adbkey`，Docker 里挂到 `/app/.android/`，或用
+   `TVCAST_ADBKEY` 指到别的路径；
 2. 后端是**单 worker / 单副本**（`--workers 1`；端口映射是进程内状态，多 worker 会 503）；
 3. 反向代理放行 `/ws/` 的 Upgrade（仓库里的 `web/docker/nginx.conf` 和 `deploy/nginx` 都已包含）；
 4. 电视装 1.34 或更新版本（下载页的 `xingmu-aerial-tv-1.34.apk`）。
