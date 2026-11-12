@@ -209,8 +209,8 @@ location / {
 写进设备表的 `lan_ip/adb_port`，并自己执行 `adb connect 127.0.0.1:<port>`。服务器只要求：
 
 1. **adb 或纯 Python 二选一**：`PATH` 里有 `adb` 就走原来的 adb 快路径；没有 adb 时后端
-   自动用仓库自带的纯 Python ADB（`backend/vendor/adb_shell`，签名用 `rsa` + `pyasn1`，
-   `pip install -r requirements.txt` 会装），不需要 `apt install android-tools-adb`。
+   自动用仓库自带的纯 Python ADB（`backend/vendor/` 里的 `adb_shell` + `rsa` + `pyasn1`，
+   无需额外 pip 包，也不需要 `apt install android-tools-adb`）。
    两条路都需要电视已授权的 `adbkey`/`adbkey.pub`：默认读 `~/.android/adbkey`，Docker 里
    把它挂到 `/app/.android/`，或用环境变量 `TVCAST_ADBKEY` 指到别的路径；
 2. 后端是**单 worker / 单副本**（`--workers 1`；端口映射是进程内状态，多 worker 会 503）；
