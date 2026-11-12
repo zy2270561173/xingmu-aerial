@@ -241,15 +241,26 @@ async def _touch_device(
         if isinstance(metadata, dict)
         else current.get("metadata_json", "{}")
     )
+    # 隧道开着时设备表里的 lan_ip:adb_port 是给服务器 adb 用的 127.0.0.1:<port>；
+    # 心跳里的局域网 IP 不能再把它覆盖回去，否则截图/按键又会去连不可达的内网地址。
+    adb_tunnels = getattr(websocket.app.state, "adb_tunnels", None)
+    tunnel_port = adb_tunnels.port_for(device["device_id"]) if adb_tunnels is not None else 0
+    lan_ip = (
+        "127.0.0.1"
+        if tunnel_port
+        else str(data.get("lan_ip", current["lan_ip"]))[:64]
+    )
+    adb_port = tunnel_port or int(current.get("adb_port") or 5555)
     websocket.app.state.db.execute(
         """
-        UPDATE devices SET last_seen_at = ?, lan_ip = ?, wan_ip = ?, nat_type = ?,
+        UPDATE devices SET last_seen_at = ?, lan_ip = ?, adb_port = ?, wan_ip = ?, nat_type = ?,
             current_activity = ?, playing_url = ?, position_ms = ?, battery_whitelist = ?,
             model = ?, app_version = ?, metadata_json = ?, updated_at = ? WHERE id = ?
         """,
         (
             now,
-            str(data.get("lan_ip", current["lan_ip"]))[:64],
+            lan_ip,
+            adb_port,
             str(data.get("wan_ip", current["wan_ip"]))[:64],
             str(data.get("nat_type", current["nat_type"]))[:64],
             str(data.get("current_activity", current["current_activity"]))[:256],

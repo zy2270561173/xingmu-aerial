@@ -16,7 +16,7 @@ from dependencies import get_current_user
 from hub import ConnectionHub
 from player_sessions import PlayerSessionStore
 from p2p_rendezvous import P2PSessionStore, start_rendezvous
-from ws import control_ws, device_ws
+from ws import control_ws, device_ws, tunnel_ws
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -28,6 +28,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database.initialize(
             current_settings.admin_username, current_settings.admin_password
         )
+        # /ws/tunnel 的端口映射只存在于本进程内；上一轮留下的 127.0.0.1 一定是残影。
+        await app.state.adb_tunnels.clear_stale()
         # P2P 的 UDP 会合是可选能力：端口被占用时不能让整个后端起不来（注册、心跳、遥控、
         # 会员、支付都与它无关）。绑定失败就降级，客户端会自动回落到后端转发。
         try:
@@ -47,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payment_reconciliation.cancel()
             with suppress(asyncio.CancelledError):
                 await payment_reconciliation
+            await app.state.adb_tunnels.shutdown()
             if transport is not None:
                 transport.close()
 
@@ -59,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = current_settings
     app.state.db = database
     app.state.hub = ConnectionHub()
+    app.state.adb_tunnels = tunnel_ws.AdbTunnelManager(app)
     app.state.player_sessions = PlayerSessionStore()
     app.state.p2p_sessions = P2PSessionStore()
     app.state.started_at = time.monotonic()
@@ -95,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         screen.router,
         screen.page_router,
         device_ws.router,
+        tunnel_ws.router,
         control_ws.router,
     ):
         app.include_router(router)
@@ -168,6 +173,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # sent people chasing a P2P problem that was really a missing UDP port.
             "p2p": "udp_hole_punch_with_websocket_fallback" if rendezvous_up else "websocket_relay_only",
             "p2p_sessions": request.app.state.p2p_sessions.stats(),
+            # 排查用：哪台电视的 adb 现在映射到本机哪个端口（127.0.0.1）。
+            "adb_tunnels": request.app.state.adb_tunnels.mapping(),
             **connections,
         }
 

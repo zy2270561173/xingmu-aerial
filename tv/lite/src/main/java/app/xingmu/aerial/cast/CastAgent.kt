@@ -111,6 +111,7 @@ object CastAgent {
 
     fun stop() {
         running.set(false)
+        AdbTunnel.stop()
         stopPreview()
         p2p?.stop()
         p2p = null
@@ -247,6 +248,8 @@ object CastAgent {
                 publish(State.Online, "已连接")
                 reportAppInventory(ws)
                 startHeartbeat(ws)
+                // The server's adb cannot reach a home LAN; give it a reverse tunnel to 127.0.0.1:5555.
+                appContext?.let { AdbTunnel.start(it) }
                 // The phone's 已点歌单 is mirrored from the TV; tell it the queue the moment we are back.
                 MusicPlayback.publishState()
             }
@@ -295,6 +298,8 @@ object CastAgent {
             // Admin approval from the console lands as approval_result; same effect on the page.
             "approval_result" -> refreshAccount(accountListener ?: {})
             "preview_start" -> startPreview(ws, bounded(json.optInt("fps", 1), 1, 3))
+            // The backend has no idle adb tunnel left; open one so the next adb connect can attach.
+            "tunnel_open" -> AdbTunnel.ensureTunnels()
             "preview_stop" -> stopPreview()
             "error" -> Log.w(TAG, "backend error: " + json.optString("code"))
         }

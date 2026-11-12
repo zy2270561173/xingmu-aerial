@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS devices (
     app_version TEXT NOT NULL DEFAULT '',
     last_seen_at INTEGER,
     lan_ip TEXT NOT NULL DEFAULT '',
+    adb_port INTEGER NOT NULL DEFAULT 5555,
     wan_ip TEXT NOT NULL DEFAULT '',
     nat_type TEXT NOT NULL DEFAULT 'unknown',
     public_key TEXT NOT NULL DEFAULT '',
@@ -373,6 +374,15 @@ class Database:
             for name, statement in user_column_migrations.items():
                 if name not in user_columns:
                     connection.execute(statement)
+            # adb_port 是 /ws/tunnel 分配的本地端口：老库没有这一列，幂等补上。
+            device_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(devices)").fetchall()
+            }
+            if "adb_port" not in device_columns:
+                connection.execute(
+                    "ALTER TABLE devices ADD COLUMN adb_port INTEGER NOT NULL DEFAULT 5555"
+                )
             apk_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(apks)").fetchall()
