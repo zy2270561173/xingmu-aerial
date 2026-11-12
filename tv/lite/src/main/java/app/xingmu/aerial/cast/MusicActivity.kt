@@ -70,6 +70,9 @@ class MusicActivity : Activity() {
     @Volatile private var playing = false
     @Volatile private var currentMid = ""
     @Volatile private var currentQuality = ""
+    /** The URL the current QR encodes; empty until one is generated. */
+    private var qrUrl = ""
+    private var qrCheckAt = 0L
     private var sheet: View? = null
     private val work = Executors.newSingleThreadExecutor()
     private val musicListener: (MusicSnapshot) -> Unit = { snapshot -> render(snapshot) }
@@ -83,6 +86,12 @@ class MusicActivity : Activity() {
             if (playing) disc.rotateBy(0.8f)
             val position = MusicPlayback.positionMs()
             syncLyric(position)
+            // The signed URL arrives right after auth; refresh the QR once it lands.
+            val now = System.currentTimeMillis()
+            if (now - qrCheckAt >= 2000L) {
+                qrCheckAt = now
+                updateQr()
+            }
             val duration = MusicPlayback.durationMs()
             timeView.text = format(position) + " / " + format(if (duration > 0) duration else fallbackDuration)
             handler.postDelayed(this, 100L)
@@ -111,6 +120,7 @@ class MusicActivity : Activity() {
         super.onStart()
         MusicPlayback.addListener(musicListener)
         render(MusicPlayback.snapshot())
+        updateQr()
         startTicker()
     }
 
@@ -624,12 +634,25 @@ class MusicActivity : Activity() {
     private fun updateQr() {
         val base = CastConfig.backendUrl
         val device = CastConfig.deviceId
-        if (base.isEmpty() || device.isEmpty()) {
-            qrView.setImageBitmap(null)
-            qrLabel.text = "未连接后端"
-            return
+        // Prefer the signed URL the backend pushed: the bare path is refused with 403 now.
+        val signed = CastAgent.musicPageUrl
+        val url = when {
+            signed.isNotEmpty() -> signed
+            base.isNotEmpty() && device.isNotEmpty() -> base + "/music/" + device
+            else -> {
+                if (qrUrl.isNotEmpty()) {
+                    qrView.setImageBitmap(null)
+                    qrLabel.text = "未连接后端"
+                    qrUrl = ""
+                }
+                return
+            }
         }
-        val url = base + "/music/" + device
+        if (url == qrUrl) return
+        if (signed.isEmpty()) {
+            Log.w(TAG, "未收到签名 URL，二维码退回未签名地址（手机打开会 403）")
+        }
+        qrUrl = url
         handler.post {
             val bitmap = runCatching { qrBitmap(url) }.getOrNull()
             if (bitmap != null) {

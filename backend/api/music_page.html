@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#08080c">
+<!-- The URL carries the signed token; never send it to a cover CDN as a Referer. -->
+<meta name="referrer" content="no-referrer">
 <title>星幕点歌台</title>
 <style>
   :root {
@@ -203,8 +205,16 @@
   <footer>星幕 · 客厅电视点歌台</footer>
 </div>
 <script>
-  let DEVICE_ID = localStorage.getItem("xingmu_music_device") || __DEVICE_ID__;
+  // The page is opened from a signed QR link. The token binds this page to the device below, so
+  // the stored "which TV" choice is gone: a phone cannot sign a link for a different device.
+  let DEVICE_ID = __DEVICE_ID__;
   const API = "/api/music";
+  const TOKEN = (function () {
+    const match = /[?&]t=([^&#]+)/.exec(location.search || "");
+    return match ? decodeURIComponent(match[1]) : "";
+  })();
+  const AUTH = TOKEN ? "?t=" + encodeURIComponent(TOKEN) : "";
+  let linkExpired = false;
   const $ = (id) => document.getElementById(id);
   let quality = "MP3_320";
   let results = [];
@@ -287,7 +297,8 @@
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           device_id: DEVICE_ID, mid: song.mid, name: song.name, singer: song.singer,
-          album: song.album || "", cover: song.cover, interval: song.interval, quality: quality
+          album: song.album || "", cover: song.cover, interval: song.interval, quality: quality,
+          t: TOKEN
         })
       });
       toast(data.delivered ? ("已点：" + esc(song.name) + "，电视马上播放") : ("已加入队列：" + esc(song.name) + "（电视暂时不在线）"), data.delivered ? "good" : "");
@@ -375,19 +386,25 @@
   }
 
   async function loadState() {
-    if (dragging || Date.now() < suppressUntil) return;
+    if (linkExpired || dragging || Date.now() < suppressUntil) return;
     try {
-      const data = await api(API + "/state/" + encodeURIComponent(DEVICE_ID));
+      const data = await api(API + "/state/" + encodeURIComponent(DEVICE_ID) + AUTH);
       stateData = data;
       render();
-    } catch (error) { /* the state poll is a convenience; keep the page usable */ }
+    } catch (error) {
+      // The state poll is a convenience; only the signed link expiring is worth saying out loud.
+      if (!linkExpired && String(error.message).indexOf("失效") >= 0) {
+        linkExpired = true;
+        say("点歌链接已失效，请在电视上重新扫码", "bad");
+      }
+    }
   }
 
   async function deleteItem(id, current) {
     if (!id) return;
     suppressUntil = Date.now() + 500;
     try {
-      await api(API + "/queue/" + encodeURIComponent(DEVICE_ID) + "/" + encodeURIComponent(id), { method: "DELETE" });
+      await api(API + "/queue/" + encodeURIComponent(DEVICE_ID) + "/" + encodeURIComponent(id) + AUTH, { method: "DELETE" });
       toast(current ? "已跳过这首歌" : "已删除", "good");
       setTimeout(loadState, 500);
     } catch (error) {
@@ -406,10 +423,10 @@
     if (!order.length) return;
     suppressUntil = Date.now() + 700;
     try {
-      await api(API + "/queue/" + encodeURIComponent(DEVICE_ID), {
+      await api(API + "/queue/" + encodeURIComponent(DEVICE_ID) + AUTH, {
         method: "PUT",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({order: order})
+        body: JSON.stringify({order: order, t: TOKEN})
       });
       toast("顺序已同步到电视", "good");
       setTimeout(loadState, 600);
@@ -511,39 +528,7 @@
   loadState();
   pollTimer = setInterval(loadState, 1500);
 
-/* 设备切换：多台电视时选一台点歌，选择记在本地 */
-(async function initDevicePicker() {
-  try {
-    const res = await fetch("/api/music/devices");
-    const list = await res.json();
-    if (!Array.isArray(list) || list.length === 0) return;
-    const bar = document.createElement("div");
-    bar.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99;display:flex;gap:10px;align-items:center;padding:10px 16px;background:rgba(8,16,22,.82);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.12);font:14px/1.4 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#eaf3f2";
-    const label = document.createElement("span");
-    label.textContent = "点歌到";
-    label.style.cssText = "color:#9fb3b0;flex:0 0 auto";
-    const select = document.createElement("select");
-    select.style.cssText = "flex:1;min-width:0;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#eaf3f2;font-size:14px";
-    list.forEach((item) => {
-      const option = document.createElement("option");
-      option.value = item.device_id;
-      option.textContent = (item.online ? "● " : "○ ") + item.name;
-      if (item.device_id === DEVICE_ID) option.selected = true;
-      select.appendChild(option);
-    });
-    select.addEventListener("change", () => {
-      DEVICE_ID = select.value;
-      localStorage.setItem("xingmu_music_device", DEVICE_ID);
-      location.reload();
-    });
-    bar.appendChild(label);
-    bar.appendChild(select);
-    document.body.appendChild(bar);
-    document.body.style.paddingTop = "56px";
-  } catch (err) {
-    /* 拉不到设备列表就沿用 URL 里的设备 */
-  }
-})();
+  /* 多电视切换只在控制台里做：手机页的签名只对扫码的那台电视有效，/api/music/devices 也不再公开。 */
 </script>
 </body>
 </html>

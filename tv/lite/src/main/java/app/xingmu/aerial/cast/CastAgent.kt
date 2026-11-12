@@ -63,6 +63,8 @@ object CastAgent {
     @Volatile private var foregroundPackage = ""
     /** Player page URL pushed by the phone; the DLNA path prefers it for HLS streams. */
     @Volatile var lastPlayerUrl: String = ""
+    /** Signed 点歌台 URL pushed after auth; empty until the backend answers. */
+    @Volatile var musicPageUrl: String = ""
 
     /** Cached /api/vip/device/status payload, and the pairing code when the TV is still pending. */
     @Volatile var accountStatus: JSONObject? = null
@@ -114,6 +116,7 @@ object CastAgent {
         p2p = null
         socket?.close(1000, "stopped")
         socket = null
+        musicPageUrl = ""
         MusicPlayback.statePublisher = null
         heartbeat?.shutdownNow()
         heartbeat = null
@@ -219,6 +222,7 @@ object CastAgent {
                 if (code == 4401) {
                     // Token rejected: register again next round instead of retrying forever.
                     CastConfig.rotateIdentity()
+                    musicPageUrl = ""
                 }
                 publish(if (code == 4403) State.Pending else State.Error,
                     if (code == 4403) "等待管理员审核" else "连接已断开（" + code + "）")
@@ -245,6 +249,14 @@ object CastAgent {
                 startHeartbeat(ws)
                 // The phone's 已点歌单 is mirrored from the TV; tell it the queue the moment we are back.
                 MusicPlayback.publishState()
+            }
+            "music_page" -> {
+                // The signed 点歌台 link: the QR shows this instead of a bare /music/<id>.
+                val url = json.optString("url")
+                if (url.isNotEmpty()) {
+                    musicPageUrl = url
+                    Log.i(TAG, "music_page received, QR url: " + maskPageToken(url))
+                }
             }
             "command" -> {
                 val command = json.optJSONObject("command") ?: return
@@ -865,6 +877,13 @@ object CastAgent {
             }
         }
         return result
+    }
+    /** The signed token must never reach logcat: only its first 8 characters are shown. */
+    private fun maskPageToken(url: String): String {
+        val marker = url.indexOf("?t=")
+        if (marker < 0) return url
+        val token = url.substring(marker + 3)
+        return url.substring(0, marker + 3) + token.take(8) + "…(" + token.length + " chars)"
     }
     private fun friendly(error: Throwable): String = when (error) {
         is java.net.UnknownHostException -> "找不到后端服务器"

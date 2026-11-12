@@ -6,6 +6,7 @@ import binascii
 import json
 import time
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -28,6 +29,32 @@ def _safe_int(value: Any, minimum: int = 0) -> int:
         return min(9_223_372_036_854_775_807, max(minimum, int(value or 0)))
     except (TypeError, ValueError, OverflowError):
         return minimum
+
+
+def _public_base_url(websocket: WebSocket) -> str:
+    """The base URL the phone must reach, from settings or from this WebSocket's own Host header.
+
+    A WebSocket has no ``request.base_url``; behind a reverse proxy the forwarded headers are the
+    only way to learn the public scheme and host, so they win over the socket's local address.
+    """
+    settings = websocket.app.state.settings
+    configured = str(getattr(settings, "public_base_url", "") or "").rstrip("/")
+    if configured:
+        return configured
+    headers = websocket.headers
+    host = (headers.get("x-forwarded-host") or headers.get("host") or websocket.url.netloc)
+    host = host.split(",")[0].strip()
+    proto = (headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    if proto not in {"http", "https"}:
+        proto = "https" if websocket.url.scheme == "wss" else "http"
+    return f"{proto}://{host}"
+
+
+def _music_page_url(websocket: WebSocket, device_id: str) -> str:
+    """A signed phone-page URL; the token is what makes the page and its API usable."""
+    settings = websocket.app.state.settings
+    token = music_api.music_sign(settings, device_id)
+    return f"{_public_base_url(websocket)}/music/{quote(device_id, safe='')}?t={token}"
 
 
 def _replace_app_inventory(
@@ -133,6 +160,10 @@ async def device_websocket(websocket: WebSocket) -> None:
                 "status": device["status"],
                 "heartbeat_interval": HEARTBEAT_INTERVAL_SECONDS,
             }
+        )
+        # The TV shows this URL as the 点歌台 QR: a signed link the phone can use for half a day.
+        await websocket.app.state.hub.send_device(
+            device_id, {"type": "music_page", "url": _music_page_url(websocket, device_id)}
         )
         await _broadcast_presence(websocket, device_id, True)
         if device["status"] == "approved" and device["enabled"]:

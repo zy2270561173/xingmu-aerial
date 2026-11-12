@@ -8,6 +8,9 @@ what this module adds is a stable, same-origin API, a queue per device and the p
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -17,9 +20,15 @@ from typing import Any, AsyncIterator
 from urllib.parse import quote, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
+
+from auth import decode_access_token
+from config import Settings
+from dependencies import bearer, require_admin
 
 # Overridable for a local mirror; the public service is what the phone page was checked against.
 UPSTREAM = os.getenv("TVCAST_MUSIC_BASE", "https://music.muysky.cn").rstrip("/")
@@ -34,15 +43,74 @@ FALLBACK_QUALITIES = (
 )
 DEFAULT_QUALITY = "MP3_320"
 MAX_QUEUE = 60
+# The phone page's link lives a shift, not forever: a screenshot of the QR stops working the next day.
+PAGE_TOKEN_TTL_SECONDS = 12 * 60 * 60
 
 router = APIRouter(prefix="/api/music", tags=["music"])
 page_router = APIRouter(tags=["music"])
 
-# In-memory by design: a queue is a living room's "已点" list, not history worth keeping.
-_queues: dict[str, list[dict[str, Any]]] = {}
-# The TV's latest music_state, so the phone mirrors the TV rather than guessing.
-_state: dict[str, dict[str, Any]] = {}
-_sequence = 0
+
+def _page_token_signature(settings: Settings, payload: str) -> str:
+    """urlsafe base64 HMAC-SHA256 of ``device_id.exp``; the secret is the backend's JWT secret."""
+    secret = str(settings.jwt_secret).encode("utf-8")
+    digest = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def music_sign(settings: Settings, device_id: str) -> str:
+    """A short-lived phone-page token: ``{exp}.{sig}``, valid for [PAGE_TOKEN_TTL_SECONDS]."""
+    expires = int(time.time()) + PAGE_TOKEN_TTL_SECONDS
+    payload = f"{device_id}.{expires}"
+    return f"{expires}.{_page_token_signature(settings, payload)}"
+
+
+def music_verify(settings: Settings, device_id: str, token: str) -> bool:
+    """True when [token] was signed by this backend for [device_id] and has not expired."""
+    text = str(token or "").strip()
+    if not text or "." not in text:
+        return False
+    expires_text, signature = text.split(".", 1)
+    try:
+        expires = int(expires_text)
+    except ValueError:
+        return False
+    if expires < int(time.time()):
+        return False
+    expected = _page_token_signature(settings, f"{device_id}.{expires}")
+    return hmac.compare_digest(expected, signature)
+
+
+def _console_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+) -> dict[str, Any] | None:
+    """The console's admin JWT, when one was sent; an invalid token is a 401, not a silent fallback."""
+    if credentials is None:
+        return None
+    try:
+        claims = decode_access_token(request.app.state.settings, credentials.credentials)
+    except jwt.PyJWTError as error:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired token") from error
+    user = request.app.state.db.fetch_one(
+        "SELECT * FROM users WHERE id = ?", (int(claims["sub"]),)
+    )
+    if user is None or not user["active"]:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user is disabled")
+    # A regular account is not a console exemption; a valid phone-page token may still get in.
+    return user if user["role"] == "admin" else None
+
+
+def _require_device_access(
+    request: Request, device_id: str, token: str, user: dict[str, Any] | None
+) -> None:
+    """Device control is either the console (JWT) or a valid phone-page token for that device."""
+    if user is not None:
+        return
+    if music_verify(request.app.state.settings, device_id.strip(), token):
+        return
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN, "点歌链接已失效，请在电视上重新扫码"
+    )
 
 
 class SongBody(BaseModel):
@@ -56,12 +124,22 @@ class SongBody(BaseModel):
     interval: int = Field(default=0, ge=0, le=24 * 60 * 60)
     quality: str = Field(default=DEFAULT_QUALITY, max_length=32)
     url: str | None = Field(default=None, max_length=4000)
+    # The phone may also carry its signed token in the body instead of ``?t=``.
+    t: str | None = Field(default=None)
 
 
 class QueueOrderBody(BaseModel):
     """The upcoming ids in the order the phone dragged them into."""
 
     order: list[str] = Field(default_factory=list)
+    t: str | None = Field(default=None)
+
+
+# In-memory by design: a queue is a living room's "已点" list, not history worth keeping.
+_queues: dict[str, list[dict[str, Any]]] = {}
+# The TV's latest music_state, so the phone mirrors the TV rather than guessing.
+_state: dict[str, dict[str, Any]] = {}
+_sequence = 0
 
 
 async def _upstream(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -466,12 +544,25 @@ async def _enqueue(request: Request, device_id: str, body: SongBody) -> dict[str
 
 
 @router.post("/queue/{device_id}")
-async def enqueue_for_device(device_id: str, body: SongBody, request: Request) -> dict[str, Any]:
+async def enqueue_for_device(
+    device_id: str,
+    body: SongBody,
+    request: Request,
+    t: str = Query(default=""),
+    user: dict[str, Any] | None = Depends(_console_user),
+) -> dict[str, Any]:
+    _require_device_access(request, device_id, t or (body.t or ""), user)
     return await _enqueue(request, device_id, body)
 
 
 @router.get("/queue/{device_id}")
-async def read_queue(device_id: str) -> dict[str, Any]:
+async def read_queue(
+    device_id: str,
+    request: Request,
+    t: str = Query(default=""),
+    user: dict[str, Any] | None = Depends(_console_user),
+) -> dict[str, Any]:
+    _require_device_access(request, device_id, t, user)
     state = _state.get(device_id.strip())
     queue = list(state["queue"] if state is not None else _queue_for(device_id.strip()))
     return {
@@ -484,8 +575,14 @@ async def read_queue(device_id: str) -> dict[str, Any]:
 
 
 @router.get("/state/{device_id}")
-async def music_state(device_id: str, request: Request) -> dict[str, Any]:
+async def music_state(
+    device_id: str,
+    request: Request,
+    t: str = Query(default=""),
+    user: dict[str, Any] | None = Depends(_console_user),
+) -> dict[str, Any]:
     """What the TV reported: the phone's 已点歌单 and the playing row come from here."""
+    _require_device_access(request, device_id, t, user)
     device_id = device_id.strip()
     view = _current_state(device_id)
     view["device_id"] = device_id
@@ -495,8 +592,15 @@ async def music_state(device_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.put("/queue/{device_id}")
-async def reorder_queue(device_id: str, body: QueueOrderBody, request: Request) -> dict[str, Any]:
+async def reorder_queue(
+    device_id: str,
+    body: QueueOrderBody,
+    request: Request,
+    t: str = Query(default=""),
+    user: dict[str, Any] | None = Depends(_console_user),
+) -> dict[str, Any]:
     """Drag and drop on the phone: reorder the upcoming songs and tell the TV the same order."""
+    _require_device_access(request, device_id, t or (body.t or ""), user)
     device_id = device_id.strip()
     state = _state.get(device_id)
     if state is not None:
@@ -533,8 +637,15 @@ async def reorder_queue(device_id: str, body: QueueOrderBody, request: Request) 
 
 
 @router.delete("/queue/{device_id}/{item_id}")
-async def remove_queue_item(device_id: str, item_id: str, request: Request) -> dict[str, Any]:
+async def remove_queue_item(
+    device_id: str,
+    item_id: str,
+    request: Request,
+    t: str = Query(default=""),
+    user: dict[str, Any] | None = Depends(_console_user),
+) -> dict[str, Any]:
     """The phone's delete: remove the row and tell the TV; removing the current row skips it."""
+    _require_device_access(request, device_id, t, user)
     device_id = device_id.strip()
     state = _state.get(device_id)
     if state is not None:
@@ -562,12 +673,40 @@ async def remove_queue_item(device_id: str, item_id: str, request: Request) -> d
 
 
 @router.post("/request")
-async def request_song(body: SongBody, request: Request) -> dict[str, Any]:
+async def request_song(
+    body: SongBody,
+    request: Request,
+    t: str = Query(default=""),
+    user: dict[str, Any] | None = Depends(_console_user),
+) -> dict[str, Any]:
     """The phone page's one call: queue the song and push it to the TV."""
+    _require_device_access(request, body.device_id or "", t or (body.t or ""), user)
     return await _enqueue(request, body.device_id or "", body)
 
 
 _PAGE_FILE = Path(__file__).with_name("music_page.html")
+
+_PAGE_DENIED = """<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>点歌链接已失效</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+         gap: 14px; padding: 32px; box-sizing: border-box; background: #081016; color: #eaf3f2;
+         font: 16px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  p { margin: 0; max-width: 320px; text-align: center; color: #9fb3b0; }
+</style>
+</head>
+<body>
+  <h1>点歌链接已失效</h1>
+  <p>这个点歌二维码只在一段时间内有效，请在电视的点歌台重新扫码。</p>
+</body>
+</html>
+"""
 
 
 @lru_cache(maxsize=1)
@@ -576,7 +715,9 @@ def _page_source() -> str:
 
 
 @router.get("/devices")
-async def music_devices(request: Request) -> list[dict]:
+async def music_devices(
+    request: Request, _admin: dict[str, Any] = Depends(require_admin)
+) -> list[dict]:
     """点歌页的设备下拉：只暴露已批准设备的 id 与名称，方便多台电视切换。"""
     rows = request.app.state.db.fetch_all(
         "SELECT device_id, name FROM devices WHERE status = 'approved' AND enabled = 1 ORDER BY id"
@@ -592,8 +733,22 @@ async def music_devices(request: Request) -> list[dict]:
         )
     return devices
 
+
 @page_router.get("/music/{device_id}", response_class=HTMLResponse, include_in_schema=False)
-async def music_page(device_id: str) -> HTMLResponse:
-    """The phone page: one self-contained HTML file, no build step and no login."""
+async def music_page(
+    device_id: str,
+    request: Request,
+    t: str = Query(default=""),
+) -> HTMLResponse:
+    """The phone page: one self-contained HTML file, behind a short-lived signed link."""
+    if not music_verify(request.app.state.settings, device_id, t):
+        return HTMLResponse(
+            _PAGE_DENIED,
+            status_code=status.HTTP_403_FORBIDDEN,
+            headers={"Cache-Control": "no-store"},
+        )
     safe_id = json.dumps(device_id).replace("</", "<\\/")
-    return HTMLResponse(_page_source().replace("__DEVICE_ID__", safe_id))
+    return HTMLResponse(
+        _page_source().replace("__DEVICE_ID__", safe_id),
+        headers={"Cache-Control": "no-store"},
+    )
