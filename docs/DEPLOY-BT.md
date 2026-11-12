@@ -203,7 +203,32 @@ location / {
 
 ## 7. adb（按键 / 安装 / 截图）
 
-服务器要能执行 `adb` 命令：
+### 内置隧道（推荐，电视 1.34 / 后端 0.14.13 起）
+
+电视端 1.34 会主动连后端的 `/ws/tunnel`，后端为它分配 `127.0.0.1:15000` 起的端口，
+写进设备表的 `lan_ip/adb_port`，并自己执行 `adb connect 127.0.0.1:<port>`。服务器只要求：
+
+1. 后端进程的 `PATH` 里有 `adb`（`apt install -y android-tools-adb`，或下载 platform-tools
+   把目录加进 `PATH`）；
+2. 后端是**单 worker / 单副本**（`--workers 1`；端口映射是进程内状态，多 worker 会 503）；
+3. 反向代理放行 `/ws/` 的 Upgrade（仓库里的 `web/docker/nginx.conf` 和 `deploy/nginx` 都已包含）；
+4. 电视装 1.34 或更新版本（下载页的 `xingmu-aerial-tv-1.34.apk`）。
+
+部署后：
+
+```bash
+curl -s https://<域名>/api/health | python -c "import sys,json;print(json.load(sys.stdin)['adb_tunnels'])"
+# 电视连上后应类似 {'lite-xxxxxxxx': 15000}
+adb devices                      # 应出现 127.0.0.1:15000 device
+adb -s 127.0.0.1:15000 shell echo ok
+```
+
+电视重启或端口变化后，后端会自动重新 `adb connect`；最后一条隧道断开时后端会
+`adb disconnect` 并恢复原来的 `lan_ip`。
+
+### 旧版电视 / 手工方案
+
+下面是 1.33 及以前（或不想用内置隧道）时的做法。服务器要能执行 `adb` 命令：
 
 ```bash
 apt install -y android-tools-adb     # Debian/Ubuntu
