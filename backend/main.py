@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api import approval, auth_api, commands, devices, music, pairing, p2p, player, releases, settings_api, upload, users, vip
+from api import approval, auth_api, commands, devices, music, pairing, p2p, player, releases, screen, settings_api, upload, users, vip
 from config import BASE_DIR, Settings
 from db import Database
 from dependencies import get_current_user
@@ -92,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         player.router,
         music.router,
         music.page_router,
+        screen.router,
+        screen.page_router,
         device_ws.router,
         control_ws.router,
     ):

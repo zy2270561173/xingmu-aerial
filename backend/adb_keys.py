@@ -10,6 +10,7 @@ here and the TV app only reports the result. Nothing privileged runs on the TV.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 
@@ -56,7 +57,17 @@ def key_code(name: str) -> int:
 
 
 def adb_path() -> str:
-    return shutil.which("adb") or ""
+    """adb 的位置：PATH 优先，其次 ANDROID_HOME/platform-tools（面板启动的环境常缺 PATH）。"""
+    found = shutil.which("adb") or shutil.which("adb.exe")
+    if found:
+        return found
+    sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or ""
+    if sdk:
+        for candidate in ("adb.exe", "adb"):
+            path = os.path.join(sdk, "platform-tools", candidate)
+            if os.path.isfile(path):
+                return path
+    return ""
 
 
 def inject_key(serial: str, name: str, timeout: float = 5.0) -> tuple[bool, str]:
