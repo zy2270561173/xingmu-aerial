@@ -323,6 +323,14 @@ async def screen_mjpeg(
     if device is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "设备不存在")
     serial = _serial(device)
+    # 先试一帧：服务器连不到电视 adb（公网机房与家庭内网）时，直接给 503 + 明确原因，
+    # 而不是开一条永远没有帧的流让前端以为"画面中断"。
+    first = await _grab(serial, timeout=4.0)
+    if first is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "服务器无法访问电视的 adb（通常是后端与电视不在同一网络，需内网隧道或端口映射）",
+        )
     return StreamingResponse(
         _frames(serial, fps),
         media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",

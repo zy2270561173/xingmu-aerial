@@ -549,7 +549,7 @@ class ScreenMirrorActivity : Activity() {
               img.onerror = function () {
                 failed = true;
                 img.style.visibility = 'hidden';
-                show('画面中断，点刷新重试', true);
+                show('画面中断：点刷新重试；若一直无画面，多为服务器无法访问电视 adb（后端与电视不在同一网络）', true);
               };
               img.src = streamUrl;
               // Chrome 对 MJPEG 只在第一帧触发一次 load，这里再轮询一次 naturalWidth 兜底。
@@ -565,14 +565,14 @@ class ScreenMirrorActivity : Activity() {
                 if (connected && img.naturalWidth === 0) {
                   connected = false;
                   img.style.visibility = 'hidden';
-                  show('画面中断，点刷新重试', true);
+                  show('画面中断：点刷新重试；若一直无画面，多为服务器无法访问电视 adb（后端与电视不在同一网络）', true);
                 }
               }, 1000);
               setTimeout(function () {
                 if (!connected && !failed) show('正在连接电视画面…', false);
               }, 1500);
               setTimeout(function () {
-                if (!connected && !failed) show('画面中断，点刷新重试', true);
+                if (!connected && !failed) show('画面中断：点刷新重试；若一直无画面，多为服务器无法访问电视 adb（后端与电视不在同一网络）', true);
               }, 15000);
               window.addEventListener('beforeunload', function () { img.src = ''; });
             })();

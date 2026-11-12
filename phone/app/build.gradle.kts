@@ -12,8 +12,8 @@ android {
         applicationId = "app.xingmu.remote"
         minSdk = 23
         targetSdk = 35
-        versionCode = 32
-        versionName = "0.14.2"
+        versionCode = 33
+        versionName = "0.14.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
