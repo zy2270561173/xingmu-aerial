@@ -646,8 +646,8 @@ class ScreenMirrorActivity : Activity() {
         const val EXTRA_DEVICE_ID = "app.xingmu.remote.extra.DEVICE_ID"
         const val EXTRA_DEVICE_NAME = "app.xingmu.remote.extra.DEVICE_NAME"
 
-        private const val DEFAULT_FPS = 8
-        private val FPS_OPTIONS = intArrayOf(4, 8, 12)
+        private const val DEFAULT_FPS = 15
+        private val FPS_OPTIONS = intArrayOf(4, 8, 12, 15)
         private val CONTROL_KEYS = listOf(
             "确定" to "DPAD_CENTER",
             "返回" to "BACK",
