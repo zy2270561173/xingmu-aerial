@@ -573,6 +573,23 @@ def _page_source() -> str:
     return _PAGE_FILE.read_text(encoding="utf-8")
 
 
+@router.get("/devices")
+async def music_devices(request: Request) -> list[dict]:
+    """点歌页的设备下拉：只暴露已批准设备的 id 与名称，方便多台电视切换。"""
+    rows = request.app.state.db.fetch_all(
+        "SELECT device_id, name FROM devices WHERE status = 'approved' AND enabled = 1 ORDER BY id"
+    )
+    devices = []
+    for row in rows:
+        devices.append(
+            {
+                "device_id": row["device_id"],
+                "name": row["name"] or row["device_id"],
+                "online": await request.app.state.hub.is_device_online(row["device_id"]),
+            }
+        )
+    return devices
+
 @page_router.get("/music/{device_id}", response_class=HTMLResponse, include_in_schema=False)
 async def music_page(device_id: str) -> HTMLResponse:
     """The phone page: one self-contained HTML file, no build step and no login."""
