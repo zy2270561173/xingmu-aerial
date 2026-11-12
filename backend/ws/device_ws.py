@@ -11,6 +11,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from auth import verify_device_token
+from api import music as music_api
 from models import AgentEnvelope
 from serializers import command_public, device_public, sanitize_media_url
 
@@ -257,7 +258,11 @@ async def _handle_event(
             )
             return
 
-    if envelope.type not in {"heartbeat", "snapshot"}:
+    if envelope.type == "music_state":
+        # Live queue/playing state for the phone's 已点歌单; kept in memory, not in device_events.
+        music_api.record_state(device["device_id"], data)
+
+    if envelope.type not in {"heartbeat", "snapshot", "music_state"}:
         websocket.app.state.db.execute(
             "INSERT INTO device_events(device_pk, type, data_json, created_at) VALUES (?, ?, ?, ?)",
             (

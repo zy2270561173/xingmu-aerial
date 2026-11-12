@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 import time
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, AsyncIterator
 from urllib.parse import quote, urlparse
 
@@ -38,12 +40,13 @@ page_router = APIRouter(tags=["music"])
 
 # In-memory by design: a queue is a living room's "已点" list, not history worth keeping.
 _queues: dict[str, list[dict[str, Any]]] = {}
+# The TV's latest music_state, so the phone mirrors the TV rather than guessing.
+_state: dict[str, dict[str, Any]] = {}
 _sequence = 0
 
 
 class SongBody(BaseModel):
     """One song, as the phone page (and the TV's command payload) describes it."""
-
     device_id: str | None = None
     mid: str = Field(min_length=1, max_length=128)
     name: str = Field(default="", max_length=200)
@@ -53,6 +56,12 @@ class SongBody(BaseModel):
     interval: int = Field(default=0, ge=0, le=24 * 60 * 60)
     quality: str = Field(default=DEFAULT_QUALITY, max_length=32)
     url: str | None = Field(default=None, max_length=4000)
+
+
+class QueueOrderBody(BaseModel):
+    """The upcoming ids in the order the phone dragged them into."""
+
+    order: list[str] = Field(default_factory=list)
 
 
 async def _upstream(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -303,6 +312,88 @@ def _queue_for(device_id: str) -> list[dict[str, Any]]:
     return _queues.setdefault(device_id, [])
 
 
+def _queue_item(raw: Any) -> dict[str, Any] | None:
+    """A queue row as the TV and the phone both understand it (no stream URL needed)."""
+    if not isinstance(raw, dict):
+        return None
+    mid = str(raw.get("mid") or "").strip()
+    if not mid:
+        return None
+    try:
+        interval = int(raw.get("interval") or 0)
+    except (TypeError, ValueError):
+        interval = 0
+    return {
+        "id": str(raw.get("id") or ""),
+        "mid": mid,
+        "name": str(raw.get("name") or mid),
+        "singer": str(raw.get("singer") or ""),
+        "album": str(raw.get("album") or ""),
+        "cover": str(raw.get("cover") or ""),
+        "interval": max(0, interval),
+        "quality": str(raw.get("quality") or DEFAULT_QUALITY),
+    }
+
+
+def _clean_queue(raw: Any) -> list[dict[str, Any]]:
+    items = raw if isinstance(raw, list) else []
+    return [item for item in (_queue_item(entry) for entry in items) if item]
+
+
+def record_state(device_id: str, data: dict[str, Any]) -> None:
+    """The TV's own view of the queue, so the phone sees exactly what is playing and next."""
+    queue = _clean_queue(data.get("queue"))
+    try:
+        index = int(data.get("index", -1))
+    except (TypeError, ValueError):
+        index = -1
+    if queue:
+        index = max(-1, min(index, len(queue) - 1))
+    else:
+        index = -1
+    _queues[device_id] = queue
+    _state[device_id] = {
+        "queue": queue,
+        "index": index,
+        "playing": bool(data.get("playing")),
+        "prepared": bool(data.get("prepared")),
+        "position_ms": max(0, int(data.get("position_ms") or 0)),
+        "duration_ms": max(0, int(data.get("duration_ms") or 0)),
+        "quality": str(data.get("quality") or ""),
+        "updated_at": int(time.time()),
+    }
+
+
+def _current_state(device_id: str) -> dict[str, Any]:
+    state = _state.get(device_id)
+    if state is None:
+        queue = list(_queue_for(device_id))
+        return {
+            "queue": queue,
+            "index": -1,
+            "playing": False,
+            "prepared": False,
+            "position_ms": 0,
+            "duration_ms": 0,
+            "quality": "",
+            "source": "server",
+        }
+    queue = list(state["queue"])
+    index = int(state["index"])
+    view = dict(state)
+    view["queue"] = queue
+    view["index"] = index
+    view["current"] = queue[index] if 0 <= index < len(queue) else None
+    view["source"] = "tv"
+    return view
+
+
+async def _push_queue(request: Request, device_id: str, payload: dict[str, Any]) -> bool:
+    return await request.app.state.hub.send_device(
+        device_id, {"type": "command", "command": {"type": "music_queue", "payload": payload}}
+    )
+
+
 async def _enqueue(request: Request, device_id: str, body: SongBody) -> dict[str, Any]:
     """Adds a song and tells the TV over the agent socket, in the envelope CastAgent parses."""
     global _sequence
@@ -337,8 +428,18 @@ async def _enqueue(request: Request, device_id: str, body: SongBody) -> dict[str
     # A living-room queue only grows; drop the oldest rather than let a stuck session grow forever.
     if len(queue) > MAX_QUEUE:
         del queue[: len(queue) - MAX_QUEUE]
+    # Show the request on the phone at once; the TV's next music_state makes the order canonical.
+    state = _state.get(device_id)
+    if state is not None:
+        state["queue"].append({key: entry[key] for key in (
+            "id", "mid", "name", "singer", "album", "cover", "interval", "quality"
+        )})
+        if len(state["queue"]) > MAX_QUEUE:
+            del state["queue"][: len(state["queue"]) - MAX_QUEUE]
+            state["index"] = max(-1, int(state.get("index", -1)) - 1)
 
     payload = {
+        "id": entry["id"],
         "mid": entry["mid"],
         "name": entry["name"],
         "singer": entry["singer"],
@@ -369,13 +470,93 @@ async def enqueue_for_device(device_id: str, body: SongBody, request: Request) -
 
 @router.get("/queue/{device_id}")
 async def read_queue(device_id: str) -> dict[str, Any]:
-    queue = list(_queue_for(device_id.strip()))
+    state = _state.get(device_id.strip())
+    queue = list(state["queue"] if state is not None else _queue_for(device_id.strip()))
     return {
         "device_id": device_id,
         "count": len(queue),
         "queue": queue,
+        "index": int(state["index"]) if state is not None else -1,
         "next": queue[1] if len(queue) > 1 else None,
     }
+
+
+@router.get("/state/{device_id}")
+async def music_state(device_id: str, request: Request) -> dict[str, Any]:
+    """What the TV reported: the phone's 已点歌单 and the playing row come from here."""
+    device_id = device_id.strip()
+    view = _current_state(device_id)
+    view["device_id"] = device_id
+    view["online"] = await request.app.state.hub.is_device_online(device_id)
+    view["updated_at"] = int(_state.get(device_id, {}).get("updated_at", 0))
+    return view
+
+
+@router.put("/queue/{device_id}")
+async def reorder_queue(device_id: str, body: QueueOrderBody, request: Request) -> dict[str, Any]:
+    """Drag and drop on the phone: reorder the upcoming songs and tell the TV the same order."""
+    device_id = device_id.strip()
+    state = _state.get(device_id)
+    if state is not None:
+        queue = state["queue"]
+        index = int(state["index"])
+    else:
+        queue = _queue_for(device_id)
+        index = -1
+    current_id = queue[index]["id"] if 0 <= index < len(queue) else ""
+    prefix = list(queue[: index + 1]) if index >= 0 else []
+    upcoming = list(queue[index + 1:]) if index >= 0 else list(queue)
+    by_id = {item["id"]: item for item in upcoming if item["id"]}
+    ordered: list[dict[str, Any]] = []
+    for item_id in body.order:
+        item = by_id.pop(item_id, None)
+        if item is not None:
+            ordered.append(item)
+    ordered.extend(item for item in upcoming if item["id"] in by_id)
+    ordered.extend(item for item in upcoming if not item["id"])
+    queue = prefix + ordered
+    _queues[device_id] = queue
+    if state is not None:
+        state["queue"] = queue
+        state["index"] = index if index < len(queue) else (len(queue) - 1)
+    delivered = await _push_queue(
+        request, device_id, {"order": [item["id"] for item in ordered], "current": current_id}
+    )
+    return {
+        "ok": True,
+        "delivered": bool(delivered),
+        "queue": queue,
+        "index": index if index < len(queue) else (len(queue) - 1),
+    }
+
+
+@router.delete("/queue/{device_id}/{item_id}")
+async def remove_queue_item(device_id: str, item_id: str, request: Request) -> dict[str, Any]:
+    """The phone's delete: remove the row and tell the TV; removing the current row skips it."""
+    device_id = device_id.strip()
+    state = _state.get(device_id)
+    if state is not None:
+        queue = state["queue"]
+        index = int(state["index"])
+    else:
+        queue = _queue_for(device_id)
+        index = -1
+    at = next((i for i, item in enumerate(queue) if item["id"] == item_id), -1)
+    if at < 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "歌曲不在队列中")
+    queue.pop(at)
+    if not queue:
+        index = -1
+    elif at < index:
+        index -= 1
+    elif at == index and index >= len(queue):
+        index = len(queue) - 1
+    _queues[device_id] = queue
+    if state is not None:
+        state["queue"] = queue
+        state["index"] = index
+    delivered = await _push_queue(request, device_id, {"remove": item_id})
+    return {"ok": True, "delivered": bool(delivered), "queue": queue, "index": index}
 
 
 @router.post("/request")
@@ -384,212 +565,16 @@ async def request_song(body: SongBody, request: Request) -> dict[str, Any]:
     return await _enqueue(request, body.device_id or "", body)
 
 
-_PAGE = """<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0b10">
-<title>星幕点歌台</title>
-<style>
-  :root { color-scheme: dark; --ink:#f5f5f7; --dim:rgba(235,235,245,.62); --faint:rgba(235,235,245,.34);
-          --glass:rgba(255,255,255,.07); --line:rgba(255,255,255,.10); --accent:#7d6bff; }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body { margin:0; min-height:100%; }
-  body {
-    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
-    color:var(--ink); background:#08080c; padding:22px 16px 40px;
-    background-image:
-      radial-gradient(120% 70% at 8% -10%, rgba(125,107,255,.42), transparent 60%),
-      radial-gradient(90% 60% at 100% 0%, rgba(255,94,138,.22), transparent 55%),
-      radial-gradient(90% 60% at 50% 110%, rgba(51,199,255,.14), transparent 60%);
-    background-attachment:fixed;
-  }
-  .wrap { max-width:680px; margin:0 auto; }
-  header { display:flex; align-items:center; gap:12px; margin:4px 2px 18px; }
-  .logo { width:42px; height:42px; border-radius:13px; flex:0 0 auto;
-    background:linear-gradient(145deg,#8f7cff,#4b3ad6); box-shadow:0 8px 24px rgba(90,70,255,.35);
-    display:grid; place-items:center; font-size:22px; }
-  h1 { font-size:20px; margin:0; letter-spacing:.5px; font-weight:650; }
-  .sub { margin:2px 0 0; font-size:12px; color:var(--dim); }
-  .card { background:var(--glass); border:1px solid var(--line); border-radius:20px;
-    padding:14px; backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
-    box-shadow:0 12px 40px rgba(0,0,0,.28); }
-  .search { display:flex; gap:9px; }
-  input[type=search] { flex:1; min-width:0; height:46px; border-radius:14px; border:1px solid var(--line);
-    background:rgba(0,0,0,.28); color:var(--ink); padding:0 14px; font-size:16px; outline:none; }
-  input[type=search]:focus { border-color:rgba(125,107,255,.7); box-shadow:0 0 0 3px rgba(125,107,255,.16); }
-  button { font-family:inherit; cursor:pointer; }
-  .go { height:46px; padding:0 20px; border:0; border-radius:14px; font-size:15px; font-weight:650;
-    color:#fff; background:linear-gradient(145deg,#8f7cff,#5b48e8); box-shadow:0 8px 20px rgba(90,70,255,.35); }
-  .go:active { transform:scale(.97); }
-  .row { display:flex; gap:10px; align-items:center; padding:10px 4px; border-bottom:1px solid rgba(255,255,255,.06); }
-  .row:last-child { border-bottom:0; }
-  .cover { width:50px; height:50px; border-radius:12px; object-fit:cover; background:rgba(255,255,255,.08); flex:0 0 auto; }
-  .meta { flex:1; min-width:0; }
-  .name { font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .singer { font-size:12px; color:var(--dim); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .album { font-size:11px; color:var(--faint); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .pick { border:1px solid rgba(125,107,255,.5); background:rgba(125,107,255,.16); color:#cfc7ff;
-    border-radius:12px; height:36px; padding:0 15px; font-size:13px; font-weight:600; flex:0 0 auto; }
-  .pick:active { transform:scale(.95); }
-  .pick[disabled] { opacity:.45; }
-  .quality { display:flex; gap:7px; margin:12px 2px 0; flex-wrap:wrap; }
-  .chip { border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--dim);
-    border-radius:99px; padding:7px 13px; font-size:12px; }
-  .chip.on { color:#fff; border-color:rgba(125,107,255,.65); background:rgba(125,107,255,.22); }
-  .status { min-height:20px; margin:10px 4px 0; font-size:12.5px; color:var(--dim); }
-  .status.bad { color:#ff8a80; }
-  .status.good { color:#8ef0a8; }
-  h2 { font-size:13px; color:var(--dim); font-weight:600; margin:22px 4px 8px; letter-spacing:.4px; }
-  #results { margin-top:10px; }
-  .empty { color:var(--faint); font-size:13px; text-align:center; padding:26px 0; }
-  #queue .q { display:flex; gap:8px; align-items:baseline; padding:9px 4px; border-bottom:1px solid rgba(255,255,255,.06); }
-  #queue .q:last-child { border-bottom:0; }
-  .qn { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .qs { font-size:12px; color:var(--dim); white-space:nowrap; flex:0 0 auto; }
-  .idx { font-size:11px; color:var(--faint); width:16px; flex:0 0 auto; }
-  footer { text-align:center; color:var(--faint); font-size:11px; margin-top:22px; }
-  .spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.25);
-    border-top-color:#fff; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; margin-right:6px; }
-  @keyframes sp { to { transform:rotate(360deg); } }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="logo">♪</div>
-    <div>
-      <h1>星幕点歌台</h1>
-      <p class="sub">手机扫码点歌 · 电视马上播放</p>
-    </div>
-  </header>
+_PAGE_FILE = Path(__file__).with_name("music_page.html")
 
-  <section class="card">
-    <div class="search">
-      <input id="q" type="search" placeholder="搜索歌名 / 歌手" enterkeyhint="search" autocomplete="off">
-      <button id="searchBtn" class="go">搜索</button>
-    </div>
-    <div class="quality" id="quality">
-      <button class="chip on" data-q="MP3_320">高品质 320K</button>
-      <button class="chip" data-q="ACC_192">AAC 192K</button>
-      <button class="chip" data-q="MP3_128">标准 128K</button>
-    </div>
-    <div class="status" id="status"></div>
-    <div id="results"><div class="empty">输入歌名或歌手，开始点歌</div></div>
-  </section>
 
-  <h2>已点歌单</h2>
-  <section class="card" id="queue"><div class="empty">还没有点歌</div></section>
-  <footer>星幕 · 客厅电视点歌台</footer>
-</div>
-<script>
-  const DEVICE_ID = __DEVICE_ID__;
-  const API = "/api/music";
-  let quality = "MP3_320";
-  let results = [];
-  const $ = (id) => document.getElementById(id);
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-
-  function say(text, kind) {
-    const el = $("status");
-    el.textContent = text;
-    el.className = "status" + (kind ? " " + kind : "");
-  }
-
-  document.querySelectorAll(".chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      quality = chip.dataset.q;
-      document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === chip));
-    });
-  });
-
-  function render(list) {
-    results = list;
-    const box = $("results");
-    if (!list.length) { box.innerHTML = '<div class="empty">没有找到，换个关键词试试</div>'; return; }
-    box.innerHTML = list.map((song, i) =>
-      '<div class="row">' +
-        '<img class="cover" loading="lazy" referrerpolicy="no-referrer" src="' + esc(song.cover) + '" onerror="this.style.visibility=\\'hidden\\'">' +
-        '<div class="meta"><div class="name">' + esc(song.name) + '</div>' +
-        '<div class="singer">' + esc(song.singer) + '</div>' +
-        '<div class="album">' + esc(song.album || "") + (song.interval ? " · " + Math.floor(song.interval / 60) + ":" + String(song.interval % 60).padStart(2, "0") : "") + '</div></div>' +
-        '<button class="pick" data-i="' + i + '">点歌</button>' +
-      '</div>'
-    ).join("");
-    box.querySelectorAll(".pick").forEach((button) => {
-      button.addEventListener("click", () => pick(parseInt(button.dataset.i, 10), button));
-    });
-  }
-
-  async function search() {
-    const keyword = $("q").value.trim();
-    if (!keyword) { say("先输入歌名或歌手", "bad"); return; }
-    say('<span class="spin"></span>正在搜索…');
-    try {
-      const response = await fetch(API + "/search?q=" + encodeURIComponent(keyword) + "&limit=20");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || ("HTTP " + response.status));
-      render(data.data.list || []);
-      say("找到 " + (data.data.list || []).length + " 首，点「点歌」推送到电视");
-    } catch (error) {
-      say("搜索失败：" + error.message, "bad");
-    }
-  }
-
-  async function pick(index, button) {
-    const song = results[index];
-    if (!song) return;
-    button.disabled = true;
-    say('<span class="spin"></span>正在点歌…');
-    try {
-      const response = await fetch(API + "/request", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          device_id: DEVICE_ID, mid: song.mid, name: song.name, singer: song.singer,
-          album: song.album || "", cover: song.cover, interval: song.interval, quality: quality
-        })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || ("HTTP " + response.status));
-      say(data.delivered ? ("已点：" + song.name + "，电视开始播放") : ("已加入队列：" + song.name + "（电视当前不在线）"),
-          data.delivered ? "good" : "");
-      loadQueue();
-    } catch (error) {
-      say("点歌失败：" + error.message, "bad");
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function loadQueue() {
-    try {
-      const response = await fetch(API + "/queue/" + encodeURIComponent(DEVICE_ID));
-      const data = await response.json();
-      const queue = data.queue || [];
-      const box = $("queue");
-      if (!queue.length) { box.innerHTML = '<div class="empty">还没有点歌</div>'; return; }
-      box.innerHTML = queue.map((song, i) =>
-        '<div class="q"><span class="idx">' + (i + 1) + '</span>' +
-        '<span class="qn">' + esc(song.name) + '</span>' +
-        '<span class="qs">' + esc(song.singer) + '</span></div>'
-      ).join("");
-    } catch (error) { /* the queue is a convenience; keep the page usable */ }
-  }
-
-  $("searchBtn").addEventListener("click", search);
-  $("q").addEventListener("keydown", (event) => { if (event.key === "Enter") search(); });
-  loadQueue();
-  setInterval(loadQueue, 15000);
-</script>
-</body>
-</html>
-"""
+@lru_cache(maxsize=1)
+def _page_source() -> str:
+    return _PAGE_FILE.read_text(encoding="utf-8")
 
 
 @page_router.get("/music/{device_id}", response_class=HTMLResponse, include_in_schema=False)
 async def music_page(device_id: str) -> HTMLResponse:
-    """The phone page: one self-contained file, no build step and no login."""
+    """The phone page: one self-contained HTML file, no build step and no login."""
     safe_id = json.dumps(device_id).replace("</", "<\\/")
-    return HTMLResponse(_PAGE.replace("__DEVICE_ID__", safe_id))
+    return HTMLResponse(_page_source().replace("__DEVICE_ID__", safe_id))

@@ -20,6 +20,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.VideoView
 import app.xingmu.aerial.Ui.textPx
+import app.xingmu.aerial.cast.MusicPlayback
 import kotlin.random.Random
 
 /**
@@ -52,6 +53,14 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     private var failures = 0
     private var clockOnly = mode == ScreensaverMode.Clock
     private var clock: ClockView? = null
+    /** A quiet now-playing card with lyric lines; it only draws, it takes no key. */
+    private val music = SaverMusic(context)
+    private val musicTick = object : Runnable {
+        override fun run() {
+            music.update(MusicPlayback.snapshot(), MusicPlayback.positionMs())
+            handler.postDelayed(this, 500L)
+        }
+    }
     /** Films from the phone page, played from a file rather than through the proxy. */
     private val local = mode == ScreensaverMode.Videos
     private val photos = mode == ScreensaverMode.Photos
@@ -103,7 +112,22 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
             photos -> showPhotos()
             else -> showFilms()
         }
+        installMusic()
         tick.run()
+        musicTick.run()
+    }
+
+    /** Puts the read-only now-playing card above whatever the screensaver is showing. */
+    private fun installMusic() {
+        if (music.parent == null) {
+            music.alpha = 0.94f
+            addView(music, LayoutParams(Ui.pxi(410f), Ui.pxi(140f), Gravity.TOP or Gravity.END).apply {
+                topMargin = Ui.pxi(44f)
+                rightMargin = Ui.pxi(56f)
+            })
+        } else {
+            music.bringToFront()
+        }
     }
 
     private fun showClock() {
@@ -121,6 +145,7 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         clock = c
         addView(c, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
         moveClock()
+        installMusic()
     }
 
     /** The full app's ClockSaver: anywhere in the screen less a margin and the clock's own size; faded across on a GPU. */
@@ -172,6 +197,7 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         addView(caption, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = Ui.pxi(56f); bottomMargin = Ui.pxi(44f)
         })
+        installMusic()
     }
 
     private fun play() {

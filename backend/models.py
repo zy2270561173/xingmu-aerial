@@ -474,6 +474,7 @@ class AgentEnvelope(BaseModel):
             "command_result",
             "p2p_signal",
             "app_inventory",
+            "music_state",
         }
         if value not in allowed:
             raise ValueError("unsupported agent event type")

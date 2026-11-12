@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.xingmu.aerial.Ui.textPx
+import app.xingmu.aerial.cast.MusicSnapshot
 
 /**
  * Home, laid out as the full app's HomeScreen and its GridMetrics, with every layout choice in
@@ -43,6 +44,10 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
         fun inGrid(grid: Boolean)
         /** A minute has turned while Home is up. */
         fun minute() {}
+        /** The now-playing card's three actions. */
+        fun toggleMusic()
+        fun nextMusic()
+        fun openMusic()
     }
 
     private val layer = FrameLayout(context)
@@ -52,6 +57,12 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
     private val hint = TextView(context)
     val clock = ClockView(context)
     val pill = StatusPill(context)
+    /** The now-playing card; HomeView owns its focus and actions, MusicBar only draws it. */
+    val musicBar = MusicBar(context)
+    private var musicSnapshot: MusicSnapshot? = null
+    private var musicCover: android.graphics.Bitmap? = null
+    private var musicCoverMid = ""
+    private var musicButton = 0
     /** The pill, and the small clock beside it when it is on the right. */
     val topRight = LinearLayout(context)
     private val press = Press()
@@ -135,6 +146,11 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
         addView(hint, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             bottomMargin = Ui.pxi(28f)
         })
+        musicBar.visibility = GONE
+        addView(musicBar, LayoutParams(Ui.pxi(400f), Ui.pxi(84f), Gravity.TOP or Gravity.END).apply {
+            topMargin = Ui.pxi(78f)
+            rightMargin = Ui.pxi(MARGIN)
+        })
         applySettings()
     }
 
@@ -163,6 +179,15 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
     }
 
     private fun relayout() {
+        // The now-playing card sits opposite the clock: the right of the screen unless the owner
+        // put the large clock there (Personalize), then the left.
+        (musicBar.layoutParams as? LayoutParams)?.let { params ->
+            params.gravity = Gravity.TOP or if (LiteSettings.clockRight) Gravity.START else Gravity.END
+            params.leftMargin = Ui.pxi(MARGIN)
+            params.rightMargin = Ui.pxi(MARGIN)
+            params.topMargin = Ui.pxi(78f)
+            musicBar.layoutParams = params
+        }
         // Another number of apps a row: the tiles take its size (their faces follow with the reload).
         val tileW = Ui.pxi(TILE_W + 2 * TILE_EXT)
         if (tiles.firstOrNull()?.layoutParams?.width.let { it != null && it != tileW }) {
@@ -218,6 +243,58 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
         plate.rebake()
     }
 
+    /** Shows the now-playing card when there is a song; it is a picture except in [MUSIC] focus. */
+    fun setMusic(snapshot: MusicSnapshot?) {
+        val changed = snapshot?.song?.mid != musicSnapshot?.song?.mid
+        musicSnapshot = snapshot
+        if (changed) {
+            musicCover = null
+            musicBar.updateCover(null)
+        }
+        val song = snapshot?.song
+        if (song == null) {
+            musicBar.visibility = GONE
+            if (focus == MUSIC) {
+                focus = 0
+                showFocus(animate = false, force = true)
+            }
+            return
+        }
+        musicBar.visibility = if (grid) GONE else VISIBLE
+        musicBar.update(snapshot, musicCover, focus == MUSIC, musicButton)
+    }
+
+    fun setMusicCover(mid: String, bitmap: android.graphics.Bitmap?) {
+        if (mid != musicSnapshot?.song?.mid) return
+        musicCover = bitmap
+        musicBar.updateCover(bitmap)
+    }
+
+    private fun musicVisible(): Boolean = musicSnapshot?.song != null
+
+    /** OK on the now-playing card: the selected button, 0 play/pause, 1 next, 2 open. */
+    private fun musicAction() {
+        when (musicButton) {
+            0 -> host.toggleMusic()
+            1 -> host.nextMusic()
+            else -> host.openMusic()
+        }
+    }
+
+    private fun musicKey(event: KeyEvent): Boolean {
+        if (press.onKey(event, click = { musicAction() })) return true
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { musicButton = (musicButton + 2) % 3; showFocus(animate = false) }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { musicButton = (musicButton + 1) % 3; showFocus(animate = false) }
+            KeyEvent.KEYCODE_DPAD_UP -> { focus = PILL; pillFrom = 0; showFocus(animate = true) }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { focus = pillFrom.coerceAtLeast(0); showFocus(animate = true) }
+            KeyEvent.KEYCODE_BACK -> { focus = 0; showFocus(animate = true) }
+            else -> return false
+        }
+        return true
+    }
+
     /** Shows [list], keeping the focus on the same app when it is still there. */
     fun setApps(list: List<AppEntry>) {
         if (moving) return
@@ -251,6 +328,7 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
     fun reset() {
         if (moving) finishMove()
         press.reset()
+        musicButton = 0
         focus = 0
         place(animate = false)
         showFocus(animate = false)
@@ -338,6 +416,8 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
             pill.showTime = grid
             if (gridChanged || !animate || wasGrid != grid) host.inGrid(grid)
         }
+        musicBar.visibility = if (musicSnapshot?.song != null && !grid) VISIBLE else GONE
+        musicBar.update(musicSnapshot, musicCover, focus == MUSIC, musicButton)
     }
 
     /**
@@ -359,6 +439,7 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
     }
 
     fun onKey(e: KeyEvent): Boolean {
+        if (focus == MUSIC) return musicKey(e)
         val app = apps.getOrNull(focus)
         if (press.onKey(e, click = {
                 when {
@@ -416,6 +497,7 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
     private fun back() {
         when {
             moving -> finishMove()
+            focus == MUSIC -> { focus = 0; showFocus(animate = true) }
             focus == PILL -> { focus = 0; showFocus(animate = true) }
             row > 0 -> { focus %= COLS; showFocus(animate = true) }
             LiteSettings.backStartsScreensaver -> host.startSaver()
@@ -428,6 +510,12 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
             // Down, left and right go back to the top-row tile Up came from (issues #703, #1215);
             // without one, down and left go to the row's last tile and right to its first.
             val rowEnd = minOf(COLS, apps.size) - 1
+            if (dir == COLS && musicVisible()) {
+                musicButton = 0
+                focus = MUSIC
+                showFocus(animate = true)
+                return
+            }
             val to = when {
                 dir == -COLS -> return
                 pillFrom in 0..rowEnd -> pillFrom
@@ -444,7 +532,12 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
         if (dir == -COLS && to < 0) {
             if (moving) return
             pillFrom = focus
-            focus = PILL
+            if (musicVisible()) {
+                musicButton = 0
+                focus = MUSIC
+            } else {
+                focus = PILL
+            }
             showFocus(animate = true)
             return
         }
@@ -581,6 +674,8 @@ class HomeView(context: Context, private val host: Host) : FrameLayout(context) 
 
     companion object {
         const val PILL = -1
+        /** The now-playing card's focus, beside the status pill. */
+        const val MUSIC = -2
         /** Apps a row, from Personalize; the sizes below follow it, as the full app's GridMetrics. */
         val COLS get() = LiteSettings.homeColumns
         const val MARGIN = 56f

@@ -93,6 +93,8 @@ object CastAgent {
     fun start(context: Context) {
         CastConfig.init(context)
         appContext = context.applicationContext
+        MusicPlayback.attach(context)
+        MusicPlayback.statePublisher = { payload -> runCatching { socket?.send(payload) } }
         if (!CastConfig.configured) {
             publish(State.Idle, "还没有配置后端地址")
             return
@@ -112,6 +114,7 @@ object CastAgent {
         p2p = null
         socket?.close(1000, "stopped")
         socket = null
+        MusicPlayback.statePublisher = null
         heartbeat?.shutdownNow()
         heartbeat = null
         thread?.interrupt()
@@ -240,6 +243,8 @@ object CastAgent {
                 publish(State.Online, "已连接")
                 reportAppInventory(ws)
                 startHeartbeat(ws)
+                // The phone's 已点歌单 is mirrored from the TV; tell it the queue the moment we are back.
+                MusicPlayback.publishState()
             }
             "command" -> {
                 val command = json.optJSONObject("command") ?: return
@@ -351,8 +356,9 @@ object CastAgent {
             quality = payload.optString("quality").ifEmpty { "MP3_320" },
             url = "",
             directUrl = payload.optString("url"),
+            id = payload.optString("id"),
         )
-        MusicQueue.enqueue(song)
+        MusicPlayback.enqueue(ctx, song)
         MusicActivity.start(ctx)
         return true to ("已点：" + song.name)
     }
@@ -379,6 +385,10 @@ object CastAgent {
         "install" -> installFromUrl(payload)
         "media" -> mediaCommand(payload)
         "music" -> musicCommand(payload)
+        "music_queue" -> {
+            MusicPlayback.applyQueueCommand(payload)
+            true to "已调整点歌队列"
+        }
         "power" -> powerCommand(payload)
         "settings" -> settingsCommand(payload)
         "switch" -> false to "本机不支持输入源切换"

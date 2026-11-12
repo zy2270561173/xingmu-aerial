@@ -1,8 +1,9 @@
 package app.xingmu.aerial.cast
 
 /**
- * The built-in jukebox's queue. It lives as long as the process, not the page: a phone can queue a
- * song while the TV is showing Home, and [MusicActivity] finds it when the command opens the page.
+ * One song in the jukebox. [id] is the backend's queue id (or a local one when the request came
+ * from an older phone): the phone's drag/delete calls name these ids, so TV and phone agree on the
+ * same row. It lives as long as the playback service, not the page.
  */
 class MusicSong(
     val mid: String,
@@ -15,47 +16,41 @@ class MusicSong(
     var url: String,
     /** The CDN's own URL, used only if the backend relay cannot be played. */
     var directUrl: String = "",
+    var id: String = "",
 ) {
     /** "歌名 - 歌手", the form the queue shows. */
     val label: String get() = if (singer.isEmpty()) name else "$name - $singer"
 }
 
+/**
+ * The jukebox's ordered list. It is owned by [MusicPlayback] and by the playback service, so a
+ * request from a phone still becomes the queue while the TV is showing Home or the screensaver.
+ */
 object MusicQueue {
     private const val LIMIT = 100
     private val songs = ArrayList<MusicSong>()
     private var index = -1
 
-    /** True while [MusicActivity] is between onStart and onStop: then a new song only joins the queue. */
-    @Volatile var active = false
-
-    /** True while audio is actually running; a pause lets the next request take over at once. */
-    @Volatile var playing = false
-
-    /** Set when a song arrives while the page is away, so onStart knows to begin playing. */
-    @Volatile var autoPlay = false
-
-    /** Called on a worker thread whenever the queue or the current song changes. */
-    @Volatile var listener: (() -> Unit)? = null
-
     @Synchronized
-    fun enqueue(song: MusicSong): Boolean {
+    fun enqueue(song: MusicSong, makeCurrent: Boolean = false): MusicSong {
+        if (song.id.isEmpty()) song.id = "local-" + System.currentTimeMillis() + "-" + songs.size
         songs.add(song)
         while (songs.size > LIMIT) {
             songs.removeAt(0)
             if (index >= 0) index--
         }
-        // A request that arrives while the page is away (or paused) becomes what plays next; while
-        // a song is actually running it only joins the end, as the phone's 已点 list shows.
-        if (!active || !playing || index < 0) {
-            index = songs.size - 1
-            autoPlay = true
-        }
-        notifyChanged()
-        return true
+        if (makeCurrent || index < 0) index = songs.size - 1
+        return song
     }
 
     @Synchronized
     fun current(): MusicSong? = songs.getOrNull(index)
+
+    @Synchronized
+    fun currentIndex(): Int = index
+
+    @Synchronized
+    fun all(): List<MusicSong> = ArrayList(songs)
 
     @Synchronized
     fun nextSong(): MusicSong? = songs.getOrNull(index + 1)
@@ -70,8 +65,6 @@ object MusicQueue {
     fun advance(): MusicSong? {
         if (index + 1 >= songs.size) return null
         index++
-        autoPlay = false
-        notifyChanged()
         return songs[index]
     }
 
@@ -79,8 +72,6 @@ object MusicQueue {
     fun rewind(): MusicSong? {
         if (songs.isEmpty()) return null
         if (index > 0) index--
-        autoPlay = false
-        notifyChanged()
         return songs[index]
     }
 
@@ -90,16 +81,41 @@ object MusicQueue {
     @Synchronized
     fun size(): Int = songs.size
 
+    /** Removes [id]; true when it was the playing song (the caller then starts the next one). */
+    @Synchronized
+    fun remove(id: String): Boolean {
+        val at = songs.indexOfFirst { it.id == id }
+        if (at < 0) return false
+        val wasCurrent = at == index
+        songs.removeAt(at)
+        if (songs.isEmpty()) {
+            index = -1
+        } else if (at < index) {
+            index--
+        } else if (wasCurrent) {
+            index = index.coerceAtMost(songs.size - 1)
+        }
+        return wasCurrent
+    }
+
+    /** Puts the upcoming songs in the order the phone dragged them into. */
+    @Synchronized
+    fun reorderUpcoming(ids: List<String>) {
+        if (index < 0 || index + 1 >= songs.size) return
+        val upcoming = ArrayList(songs.subList(index + 1, songs.size))
+        val byId = upcoming.associateBy { it.id }
+        val ordered = ArrayList<MusicSong>()
+        for (id in ids) byId[id]?.let { ordered.add(it) }
+        for (song in upcoming) if (ids.none { it == song.id }) ordered.add(song)
+        val prefix = ArrayList(songs.subList(0, index + 1))
+        songs.clear()
+        songs.addAll(prefix)
+        songs.addAll(ordered)
+    }
+
     @Synchronized
     fun clear() {
         songs.clear()
         index = -1
-        autoPlay = false
-        notifyChanged()
-    }
-
-    private fun notifyChanged() {
-        val callback = listener ?: return
-        runCatching { callback() }
     }
 }

@@ -21,6 +21,9 @@ import android.os.SystemClock
 import app.xingmu.aerial.cast.CastConfig
 import app.xingmu.aerial.cast.CastService
 import app.xingmu.aerial.cast.MusicActivity
+import app.xingmu.aerial.cast.MusicApi
+import app.xingmu.aerial.cast.MusicPlayback
+import app.xingmu.aerial.cast.MusicSnapshot
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -53,6 +56,24 @@ class HomeActivity : Activity(), HomeView.Host {
     private val folderTiles = HashMap<String, Pair<String, Bitmap>>()
     /** Made once: [arrange] runs on every install and reload, and a tile bitmap per run would pile up. */
     private val musicTile by lazy { MusicTile.entry(this) }
+    private var musicCoverMid = ""
+    private val musicListener: (MusicSnapshot) -> Unit = { snapshot ->
+        if (!isFinishing) {
+            home.setMusic(snapshot)
+            val song = snapshot.song
+            if (song != null && song.mid != musicCoverMid) {
+                musicCoverMid = song.mid
+                home.setMusicCover(song.mid, null)
+                MusicApi.cover(song.cover) { bitmap, _ ->
+                    if (!isFinishing && MusicPlayback.snapshot().song?.mid == song.mid) {
+                        home.setMusicCover(song.mid, bitmap)
+                    } else {
+                        bitmap?.recycle()
+                    }
+                }
+            }
+        }
+    }
     private val work = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val proxy by lazy { FilmProxy(applicationContext) }
@@ -143,6 +164,8 @@ class HomeActivity : Activity(), HomeView.Host {
     override fun onResume() {
         super.onResume()
         resumed = true
+        MusicPlayback.addListener(musicListener)
+        home.setMusic(MusicPlayback.snapshot())
         Kids.homeInFront = true
         home.refreshClock()
         showNetwork()
@@ -157,6 +180,7 @@ class HomeActivity : Activity(), HomeView.Host {
 
     override fun onPause() {
         resumed = false
+        MusicPlayback.removeListener(musicListener)
         Kids.homeInFront = false
         handler.removeCallbacks(idle)
         hideSaver()
@@ -263,7 +287,7 @@ class HomeActivity : Activity(), HomeView.Host {
             // Home first, with stand-ins for tiles not made yet; then the real ones as they come.
             val first = AppCatalog.load(this, quick = true)
             Log.i(TAG, "${first.size} apps in ${System.currentTimeMillis() - started} ms")
-            handler.post { if (!isFinishing) { all = first; arrange() } }
+            handler.post { if (!isFinishing) { all = withMusic(first); arrange() } }
             if (first.any { it.placeholder }) {
                 val list = AppCatalog.load(this) { batch -> handler.post { if (!isFinishing) replace(batch) } }
                 Log.i(TAG, "${list.size} tiles made in ${System.currentTimeMillis() - started} ms")
@@ -281,6 +305,10 @@ class HomeActivity : Activity(), HomeView.Host {
         all = all.map { byKey[it.key] ?: it }
         arrange()
     }
+
+    /** The jukebox is a tile like an app: LayoutStore may move it, fold it or hide it. */
+    private fun withMusic(list: List<AppEntry>): List<AppEntry> =
+        if (list.any { it.key == MusicTile.KEY }) list else list + musicTile
 
     private val reload = Runnable { loadApps() }
 
@@ -319,13 +347,7 @@ class HomeActivity : Activity(), HomeView.Host {
         // Every app Kids and Elders mode can show: Home's with each folder's in its place, then the hidden ones.
         kidsCandidates = arranged.home.flatMap { e -> e.folder?.let { arranged.folders[it.id].orEmpty() } ?: listOf(e) } + arranged.hidden
         if (Kids.enabled) Kids.notePackages(kidsCandidates.filter { it.key in Kids.allowed }.mapTo(HashSet()) { it.component.packageName })
-        // 点歌台 is fixed: in front of the apps in the normal Home, absent from Kids mode's short list.
-        val shown = if (Kids.active) {
-            Kids.allowed.mapNotNull { k -> kidsCandidates.firstOrNull { it.key == k } }
-        } else {
-            listOf(musicTile) + arranged.home
-        }
-        home.setApps(shown)
+        home.setApps(if (Kids.active) Kids.allowed.mapNotNull { k -> kidsCandidates.firstOrNull { it.key == k } } else arranged.home)
         (panels.lastOrNull() as? FolderView)?.let { open ->
             val inside = folderApps[open.folderId]
             if (inside.isNullOrEmpty()) closePanel() else open.setApps(inside)
@@ -404,8 +426,6 @@ class HomeActivity : Activity(), HomeView.Host {
     }
 
     override fun openMenu(app: AppEntry, tile: android.view.View) {
-        // The jukebox is a fixed tile: no move, folder or hide menu, like the full app's own entries.
-        if (app.key == MusicTile.KEY) return
         // Nothing to rearrange in Kids and Elders mode (#1013), nor on a locked Home: say where it unlocks.
         if (Kids.active) return
         if (LiteSettings.homeLocked) { Toast.makeText(this, getString(R.string.home_locked_notice), Toast.LENGTH_LONG).show(); return }
@@ -625,6 +645,12 @@ class HomeActivity : Activity(), HomeView.Host {
     }
 
     override fun startSaver() = showSaver()
+
+    override fun toggleMusic() = MusicPlayback.toggle()
+
+    override fun nextMusic() = MusicPlayback.next()
+
+    override fun openMusic() = MusicActivity.start(this)
 
     /**
      * Down in the grid the background is the plate's glass over the whole screen, as in the full app.

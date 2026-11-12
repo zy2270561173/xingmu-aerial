@@ -11,6 +11,7 @@ import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -30,14 +31,15 @@ import android.widget.ScrollView
 import android.widget.TextView
 import app.xingmu.aerial.Ui
 import app.xingmu.aerial.Ui.textPx
+import app.xingmu.aerial.Wallpapers
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
-import tv.danmaku.ijk.media.player.IjkMediaPlayer
 
 /**
  * 内置点歌台: a record player for the living room. A phone queues a song through the backend, the
@@ -63,16 +65,14 @@ class MusicActivity : Activity() {
     private lateinit var qualityButton: PillButton
     private lateinit var qrView: ImageView
     private lateinit var qrLabel: TextView
+    private lateinit var backdrop: BackdropView
 
-    @Volatile private var player: IjkMediaPlayer? = null
     @Volatile private var playing = false
-    @Volatile private var prepared = false
-    @Volatile private var durationMs = 0L
-    private var triedDirect = false
     @Volatile private var currentMid = ""
     @Volatile private var currentQuality = ""
     private var sheet: View? = null
-    @Volatile private var loadToken = 0
+    private val work = Executors.newSingleThreadExecutor()
+    private val musicListener: (MusicSnapshot) -> Unit = { snapshot -> render(snapshot) }
 
     private val lyrics = ArrayList<LyricLine>()
     private val lyricViews = ArrayList<TextView>()
@@ -80,68 +80,58 @@ class MusicActivity : Activity() {
 
     private val ticker = object : Runnable {
         override fun run() {
-            val media = player
-            if (media != null && prepared) {
-                val position = runCatching { media.currentPosition }.getOrDefault(0L)
-                if (playing) disc.rotateBy(0.8f)
-                syncLyric(position)
-                timeView.text = format(position) + " / " + format(if (durationMs > 0) durationMs else runCatching { media.duration }.getOrDefault(0L))
-            }
+            if (playing) disc.rotateBy(0.8f)
+            val position = MusicPlayback.positionMs()
+            syncLyric(position)
+            val duration = MusicPlayback.durationMs()
+            timeView.text = format(position) + " / " + format(if (duration > 0) duration else fallbackDuration)
             handler.postDelayed(this, 100L)
         }
     }
+
+    /** The song's listed length, shown until the decoder reports the real one. */
+    private var fallbackDuration = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CastConfig.init(this)
         Ui.init(this)
+        MusicPlayback.attach(this)
+        Wallpapers.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         root = FrameLayout(this)
         buildUi()
-        refreshQueue()
-        showCurrent()
+        render(MusicPlayback.snapshot())
         updateQr()
+        loadWallpaper()
     }
 
     override fun onStart() {
         super.onStart()
-        MusicQueue.active = true
-        MusicQueue.listener = { runOnUiThread { onQueueChanged() } }
-        refreshQueue()
-        showCurrent()
-        if (MusicQueue.autoPlay) {
-            MusicQueue.autoPlay = false
-            playCurrent()
-        }
+        MusicPlayback.addListener(musicListener)
+        render(MusicPlayback.snapshot())
+        startTicker()
     }
 
     override fun onStop() {
         super.onStop()
-        MusicQueue.active = false
-        MusicQueue.listener = null
-        MusicQueue.playing = false
-        pausePlayback()
+        // Playback belongs to MusicPlayback/the service: leaving this page (or going to the
+        // screensaver) must not pause it.
+        MusicPlayback.removeListener(musicListener)
+        stopTicker()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        MusicQueue.listener = null
-        MusicQueue.active = false
-        MusicQueue.playing = false
-        releasePlayer()
+        MusicPlayback.removeListener(musicListener)
+        work.shutdown()
         super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        MusicQueue.active = true
-        refreshQueue()
-        showCurrent()
-        if (MusicQueue.autoPlay) {
-            MusicQueue.autoPlay = false
-            playCurrent()
-        }
+        render(MusicPlayback.snapshot())
     }
 
     override fun onBackPressed() {
@@ -154,9 +144,9 @@ class MusicActivity : Activity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { togglePlay(); true }
-        KeyEvent.KEYCODE_MEDIA_NEXT -> { playNext(); true }
-        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { playPrevious(); true }
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { MusicPlayback.toggle(); true }
+        KeyEvent.KEYCODE_MEDIA_NEXT -> { MusicPlayback.next(); true }
+        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { MusicPlayback.previous(); true }
         else -> super.onKeyDown(keyCode, event)
     }
 
@@ -165,7 +155,8 @@ class MusicActivity : Activity() {
     private fun buildUi() {
         setContentView(root)
         root.setBackgroundColor(0xFF07070A.toInt())
-        root.addView(BackdropView(this), frame(0f, 0f, 960f, 540f))
+        backdrop = BackdropView(this)
+        root.addView(backdrop, frame(0f, 0f, 960f, 540f))
 
         disc = DiscView(this)
         place(disc, 26f, 110f, 334f, 334f)
@@ -207,15 +198,15 @@ class MusicActivity : Activity() {
 
         val prev = PillButton(this, "上一首")
         place(prev, 380f, 438f, 66f, 46f)
-        prev.setOnClickListener { playPrevious() }
+        prev.setOnClickListener { MusicPlayback.previous() }
 
         playButton = PillButton(this, "播放")
         place(playButton, 454f, 438f, 100f, 46f)
-        playButton.setOnClickListener { togglePlay() }
+        playButton.setOnClickListener { MusicPlayback.toggle() }
 
         val next = PillButton(this, "下一首")
         place(next, 562f, 438f, 66f, 46f)
-        next.setOnClickListener { playNext() }
+        next.setOnClickListener { MusicPlayback.next() }
 
         qualityButton = PillButton(this, "音质")
         place(qualityButton, 636f, 438f, 78f, 46f)
@@ -346,21 +337,33 @@ class MusicActivity : Activity() {
 
     // ---- playback ----
 
-    private fun showCurrent() {
-        val song = MusicQueue.current()
+    /** Paints one state of the service-owned player; the player itself never lives here. */
+    private fun render(snapshot: MusicSnapshot) {
+        playing = snapshot.playing
+        val song = snapshot.song
         if (song == null) {
-            if (currentMid.isEmpty()) {
+            if (currentMid.isNotEmpty() || titleView.text.isEmpty()) {
                 titleView.text = "点歌台"
                 singerView.text = "手机扫码点歌，或等待电视被点歌"
                 albumView.text = ""
                 qualityBadge.text = "待机"
                 timeView.text = ""
             }
+            currentMid = ""
+            fallbackDuration = 0L
+            refreshQueue(emptyList())
             updatePlayButton()
+            statusView.text = snapshot.status
             return
         }
         showSong(song)
+        fallbackDuration = song.interval * 1000L
+        refreshQueue(snapshot.upcoming)
         updatePlayButton()
+        statusView.text = snapshot.status
+        if (snapshot.durationMs <= 0L && fallbackDuration > 0) {
+            timeView.text = format(snapshot.positionMs) + " / " + format(fallbackDuration)
+        }
     }
 
     /** Paints the song's metadata; loading its lyric and cover happens once per song. */
@@ -459,105 +462,8 @@ class MusicActivity : Activity() {
         view.alpha = if (active) 1f else 0.72f
     }
 
-    private fun playCurrent() {
-        val song = MusicQueue.current()
-        if (song == null) {
-            showCurrent()
-            setStatus("还没有点歌")
-            return
-        }
-        showSong(song)
-        // Always a fresh player: showSong has already adopted this song's mid, so a "same song"
-        // shortcut here would mistake the previous song's player for this one (it did once).
-        prepareSong(song, 0L)
-    }
-
-    private fun prepareSong(song: MusicSong, startMs: Long) {
-        releasePlayer()
-        val token = ++loadToken
-        currentQuality = song.quality
-        updateQualityBadge(song.quality)
-        setStatus("正在获取播放地址…")
-        if (song.url.isNotEmpty()) {
-            startPlayer(song, song.url, startMs)
-            return
-        }
-        MusicApi.resolve(song.mid, song.quality) { play, error ->
-            if (token != loadToken || isFinishing || MusicQueue.current()?.mid != song.mid) return@resolve
-            if (play == null) {
-                setStatus("无法播放：" + (error ?: "未知错误"))
-                MusicQueue.playing = false
-                return@resolve
-            }
-            song.url = play.stream
-            song.directUrl = play.direct
-            song.quality = play.quality
-            currentQuality = play.quality
-            updateQualityBadge(play.quality)
-            startPlayer(song, play.stream, startMs)
-        }
-    }
-
-    private fun startPlayer(song: MusicSong, url: String, startMs: Long) {
-        releasePlayer()
-        triedDirect = false
-        setStatus("正在缓冲…")
-        val media = IjkMediaPlayer()
-        player = media
-        runCatching {
-            media.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 1)
-            media.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1)
-            media.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "reconnect", 1)
-            media.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1)
-            media.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 8000000)
-            media.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "analyzeduration", 1000000)
-            media.setDataSource(url)
-            media.setOnPreparedListener {
-                prepared = true
-                durationMs = runCatching { it.duration }.getOrDefault(0L).coerceAtLeast(0L)
-                if (startMs > 0) runCatching { it.seekTo(startMs) }
-                it.start()
-                playing = true
-                MusicQueue.playing = true
-                runOnUiThread {
-                    setStatus("")
-                    updatePlayButton()
-                }
-                startTicker()
-            }
-            media.setOnCompletionListener {
-                playing = false
-                MusicQueue.playing = false
-                prepared = false
-                runOnUiThread {
-                    updatePlayButton()
-                    if (!playNext()) setStatus("播放结束")
-                }
-            }
-            media.setOnErrorListener { _, what, extra ->
-                Log.w(TAG, "ijk error $what/$extra url=$url")
-                prepared = false
-                playing = false
-                MusicQueue.playing = false
-                runOnUiThread {
-                    updatePlayButton()
-                    val direct = song.directUrl
-                    if (!triedDirect && direct.isNotEmpty() && direct != url) {
-                        triedDirect = true
-                        setStatus("代理不可用，直连音频源重试")
-                        startPlayer(song, direct, startMs)
-                    } else {
-                        setStatus("播放失败（" + what + "/" + extra + "）")
-                    }
-                }
-                true
-            }
-            media.prepareAsync()
-        }.onFailure {
-            Log.w(TAG, "prepare failed: " + it.javaClass.simpleName)
-            setStatus("播放器错误：" + it.javaClass.simpleName)
-            releasePlayer()
-        }
+    private fun updatePlayButton() {
+        playButton.text = if (playing) "暂停" else "播放"
     }
 
     private fun startTicker() {
@@ -569,70 +475,14 @@ class MusicActivity : Activity() {
         handler.removeCallbacks(ticker)
     }
 
-    private fun releasePlayer() {
-        stopTicker()
-        val media = player
-        player = null
-        prepared = false
-        playing = false
-        durationMs = 0L
-        runCatching {
-            media?.stop()
-            media?.release()
+    /** The same wallpaper Home bakes, dimmed behind the record player, so the page belongs to Aerial. */
+    private fun loadWallpaper() {
+        work.execute {
+            val home = runCatching { Wallpapers.load() }.getOrNull()?.home ?: return@execute
+            handler.post {
+                if (!isFinishing) backdrop.setWallpaper(home)
+            }
         }
-    }
-
-    private fun pausePlayback() {
-        val media = player ?: return
-        runCatching { media.pause() }
-        playing = false
-        updatePlayButton()
-    }
-
-    private fun togglePlay() {
-        val media = player
-        if (media == null) {
-            playCurrent()
-            return
-        }
-        if (playing) {
-            runCatching { media.pause() }
-            playing = false
-            MusicQueue.playing = false
-        } else {
-            runCatching { media.start() }
-            playing = true
-            MusicQueue.playing = true
-        }
-        updatePlayButton()
-    }
-
-    private fun playNext(): Boolean {
-        val song = MusicQueue.advance()
-        if (song == null) {
-            setStatus("已经是最后一首")
-            return false
-        }
-        playCurrent()
-        return true
-    }
-
-    private fun playPrevious() {
-        val position = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
-        if (position > 3000L && player != null) {
-            runCatching { player?.seekTo(0L) }
-            return
-        }
-        val song = MusicQueue.rewind()
-        if (song == null) {
-            setStatus("已经是第一首")
-            return
-        }
-        playCurrent()
-    }
-
-    private fun updatePlayButton() {
-        playButton.text = if (playing) "暂停" else "播放"
     }
 
     private fun setStatus(text: String) {
@@ -641,18 +491,8 @@ class MusicActivity : Activity() {
 
     // ---- queue and quality ----
 
-    private fun onQueueChanged() {
-        refreshQueue()
-        showCurrent()
-        if (MusicQueue.autoPlay && MusicQueue.active) {
-            MusicQueue.autoPlay = false
-            playCurrent()
-        }
-    }
-
-    private fun refreshQueue() {
+    private fun refreshQueue(upcoming: List<MusicSong>) {
         queueBox.removeAllViews()
-        val upcoming = MusicQueue.upcoming()
         if (upcoming.isEmpty()) {
             val empty = label(12f, 500, 0x4DEBEBF5).apply { text = "暂无已点歌曲" }
             queueBox.addView(empty, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(24f)))
@@ -666,13 +506,13 @@ class MusicActivity : Activity() {
                 queueBox.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(23f)))
             }
         }
-        val next = MusicQueue.nextSong()
+        val next = upcoming.firstOrNull()
         nextView.text = if (next == null) "下一首：暂无" else "下一首：\n" + next.label
     }
 
     private fun showQualitySheet() {
         if (sheet != null) return
-        val song = MusicQueue.current() ?: return
+        val song = MusicPlayback.snapshot().song ?: return
         setStatus("正在读取音质…")
         MusicApi.qualities(song.mid, song.quality) { list, error ->
             setStatus("")
@@ -759,15 +599,11 @@ class MusicActivity : Activity() {
 
     private fun chooseQuality(quality: String) {
         closeSheet()
-        val song = MusicQueue.current() ?: return
+        val song = MusicPlayback.snapshot().song ?: return
         if (song.quality == quality) return
-        val position = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
-        song.quality = quality
-        song.url = ""
-        currentQuality = quality
         updateQualityBadge(quality)
         setStatus("正在切换音质…")
-        prepareSong(song, position)
+        MusicPlayback.changeQuality(quality)
     }
 
     private fun updateQualityBadge(quality: String) {
@@ -830,10 +666,19 @@ class MusicActivity : Activity() {
 
     // ---- drawing ----
 
-    /** The dark room behind the player: a warm purple glow off the disc and a black floor. */
+    /** The dark room behind the player: Aerial's own wallpaper, dimmed, plus a warm glow off the disc. */
     private class BackdropView(context: Context) : View(context) {
         private var background: Paint? = null
         private var glow: Paint? = null
+        private var scrim: Paint? = null
+        private var wallpaper: Bitmap? = null
+        private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+        private val rect = RectF()
+
+        fun setWallpaper(bitmap: Bitmap?) {
+            wallpaper = bitmap
+            invalidate()
+        }
 
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
             background = Paint().apply {
@@ -844,10 +689,21 @@ class MusicActivity : Activity() {
                 shader = RadialGradient(w * 0.20f, h * 0.52f, w * 0.42f,
                     0x337D6BFF, 0x007D6BFF, Shader.TileMode.CLAMP)
             }
+            scrim = Paint().apply {
+                shader = LinearGradient(0f, 0f, 0f, h.toFloat(),
+                    0x6607070A, 0xD907070A.toInt(), Shader.TileMode.CLAMP)
+            }
         }
 
         override fun onDraw(canvas: Canvas) {
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), background ?: Paint().apply { color = 0xFF08080C.toInt() })
+            val picture = wallpaper
+            if (picture != null) {
+                rect.set(0f, 0f, width.toFloat(), height.toFloat())
+                canvas.drawBitmap(picture, null, rect, bitmapPaint)
+                scrim?.let { canvas.drawRect(rect, it) }
+            } else {
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), background ?: Paint().apply { color = 0xFF08080C.toInt() })
+            }
             glow?.let { canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), it) }
         }
     }
