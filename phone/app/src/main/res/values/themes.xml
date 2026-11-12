@@ -9,4 +9,18 @@
         <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+
+    <!-- 屏幕镜像：纯黑全屏、横屏、无标题栏，系统栏由 Activity 以沉浸式方式隐藏。 -->
+    <style name="Theme.StarlightScreenMirror" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="28">shortEdges</item>
+    </style>
 </resources>

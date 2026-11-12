@@ -41,6 +41,14 @@
             android:screenOrientation="portrait"
             android:theme="@style/zxing_CaptureTheme" />
 
+        <!-- 屏幕镜像：全屏横屏的 MJPEG 观看页，只从 App 内部打开，不导出。 -->
+        <activity
+            android:name=".ScreenMirrorActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.StarlightScreenMirror" />
+
         <service
             android:name=".media.MediaShareService"
             android:exported="false"

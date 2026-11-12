@@ -1,6 +1,7 @@
 package app.xingmu.remote
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ScreenShare
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -145,6 +147,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.xingmu.remote.data.TvDevice
 import app.xingmu.remote.ui.BingBackdrop
 import app.xingmu.remote.ui.JpegPreviewView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1882,6 +1885,7 @@ private fun DetailRow(label: String, value: String) {
 private fun RemoteScreen(state: AppUiState, viewModel: MainViewModel, padding: PaddingValues) {
     var confirmingPowerOff by rememberSaveable { mutableStateOf(false) }
     var fullScreen by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     Column(
         Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1986,6 +1990,19 @@ private fun RemoteScreen(state: AppUiState, viewModel: MainViewModel, padding: P
                     Icon(Icons.Default.Fullscreen, "全屏遥控", Modifier.align(Alignment.TopEnd).padding(8.dp), tint = Color.White)
                 }
             }
+        }
+        OutlinedButton(
+            onClick = {
+                state.primaryDevice?.let { device ->
+                    context.startActivity(ScreenMirrorActivity.intent(context, device.deviceId, device.name))
+                }
+            },
+            enabled = state.primaryDevice != null,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ScreenShare, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (state.primaryDevice == null) "先选择一台电视" else "屏幕镜像")
         }
         Spacer(Modifier.height(18.dp))
         QuickKeys(viewModel::sendKey)
@@ -2207,7 +2224,12 @@ private fun CastScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
+        ScreenMirrorEntry(
+            device = if (state.offlineMode) null else (state.primaryDevice ?: state.selectedDevices.firstOrNull()),
+            offline = state.offlineMode,
+        )
+        HorizontalDivider(Modifier.padding(vertical = 18.dp))
         Text("网络视频或 M3U8", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(
             value = url,
@@ -2406,6 +2428,74 @@ private fun CastScreen(
             },
             dismissButton = { TextButton(onClick = { apkListOpen = false }) { Text("取消") } },
         )
+    }
+}
+
+@Composable
+private fun ScreenMirrorEntry(device: TvDevice?, offline: Boolean) {
+    val context = LocalContext.current
+    val usable = !offline && device != null
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = app.xingmu.remote.ui.theme.AerialPalette.GlassSoft,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    Modifier.size(42.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = app.xingmu.remote.ui.theme.AerialPalette.Fill,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ScreenShare,
+                            null,
+                            Modifier.size(22.dp),
+                            tint = app.xingmu.remote.ui.theme.AerialPalette.Label,
+                        )
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text("屏幕镜像", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        when {
+                            offline -> "离线模式不连接后端，屏幕镜像不可用"
+                            device == null -> "先选择一台电视"
+                            else -> "${device.name} · MJPEG 实时画面"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (usable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            Button(
+                onClick = {
+                    device?.let {
+                        context.startActivity(ScreenMirrorActivity.intent(context, it.deviceId, it.name))
+                    }
+                },
+                enabled = usable,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ScreenShare, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when {
+                        offline -> "离线模式不支持"
+                        device == null -> "先选择一台电视"
+                        else -> "打开屏幕镜像"
+                    },
+                )
+            }
+        }
     }
 }
 
