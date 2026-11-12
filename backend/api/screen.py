@@ -85,7 +85,12 @@ async def _grab_via_file(adb: str, serial: str, timeout: float) -> bytes | None:
         data = Path(local).read_bytes() if code == 0 else b""
         return data if _looks_like_image(data) else None
     finally:
-        Path(local).unlink(missing_ok=True)
+        # Windows 上 adb pull 的句柄可能还没释放，unlink 会抛 WinError 32；
+        # 清理失败不该把整个流打断，忽略即可。
+        try:
+            Path(local).unlink(missing_ok=True)
+        except OSError:
+            pass
         await _run([adb, "-s", serial, "shell", "rm", "-f", remote], 3.0)
 
 

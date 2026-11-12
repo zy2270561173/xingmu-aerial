@@ -13,17 +13,27 @@ import android.os.Bundle
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.xingmu.remote.network.Endpoint
 import app.xingmu.remote.security.TokenStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -41,6 +51,7 @@ class ScreenMirrorActivity : Activity() {
     private lateinit var titleView: TextView
     private lateinit var statusView: TextView
     private lateinit var fpsRow: LinearLayout
+    private lateinit var gestureLayer: GestureLayer
 
     private var deviceId: String = ""
     private var deviceName: String = ""
@@ -48,6 +59,21 @@ class ScreenMirrorActivity : Activity() {
     private var baseUrl: String = ""
     private var fps: Int = DEFAULT_FPS
     private var stoppedInBackground = false
+
+    /**
+     * 控制指令与画面走同一条后端，但按键不依赖 WebView：HTTP 命令的返回不阻塞画面，
+     * 串行发送可以避免快速连点时 adb 注入乱序。
+     */
+    private val controlScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val controlMutex = Mutex()
+    private val controlBackend by lazy {
+        (application as StarlightMobileApplication).backendClient
+    }
+    private val restoreStatus = Runnable {
+        if (::statusView.isInitialized && !isFinishing) {
+            statusView.text = "MJPEG 长连接 · $fps fps"
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,6 +139,8 @@ class ScreenMirrorActivity : Activity() {
     }
 
     override fun onDestroy() {
+        controlScope.cancel()
+        if (::statusView.isInitialized) statusView.removeCallbacks(restoreStatus)
         if (::webView.isInitialized) {
             runCatching {
                 webView.loadUrl("about:blank")
@@ -246,11 +274,91 @@ class ScreenMirrorActivity : Activity() {
         }
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
 
-        root.addView(
+        val stage = FrameLayout(this)
+        stage.addView(
             webView,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        gestureLayer = GestureLayer(this)
+        stage.addView(
+            gestureLayer,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        root.addView(stage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(
+            View(this).apply { setBackgroundColor(0x1FFFFFFF) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)),
+        )
+        root.addView(
+            buildControlBar(),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         return root
+    }
+
+    /**
+     * 画面下方的实体遥控条。镜像画面在电视上多半是 D-pad UI，绝对触屏不一定有焦点语义，
+     * 所以画面手势和这里都走电视遥控同一条按键通道（轻点=确定，滑动=方向）。
+     */
+    private fun buildControlBar(): View {
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(7), dp(10), dp(7))
+            background = GradientDrawable().apply { setColor(0xF2090B0A.toInt()) }
+        }
+        val hint = TextView(this).apply {
+            text = "轻点 = 确定 · 滑动 = 方向"
+            setTextColor(0xFF8C9B98.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            maxLines = 1
+        }
+        bar.addView(hint, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        CONTROL_KEYS.forEach { (label, key) ->
+            bar.addView(
+                controlButton(label) { sendKey(key) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    .apply { marginStart = dp(7) },
+            )
+        }
+        return bar
+    }
+
+    private fun controlButton(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
+        text = label
+        gravity = Gravity.CENTER
+        setTextColor(0xFFEAF3F2.toInt())
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setPadding(dp(11), dp(5), dp(11), dp(5))
+        background = pill(0x14FFFFFF, 0x26FFFFFF)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { onClick() }
+    }
+
+    private fun sendKey(key: String) {
+        if (deviceId.isBlank() || token.isBlank()) return
+        controlScope.launch {
+            controlMutex.withLock {
+                runCatching {
+                    controlBackend.sendCommand(
+                        baseUrl,
+                        token,
+                        deviceId,
+                        "key",
+                        JSONObject().put("key", key),
+                    )
+                }.onFailure { error ->
+                    runOnUiThread {
+                        if (!isFinishing && ::statusView.isInitialized) {
+                            statusView.removeCallbacks(restoreStatus)
+                            statusView.text = "按键发送失败：${error.message ?: "网络错误"}"
+                            statusView.postDelayed(restoreStatus, 2200)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun actionButton(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
@@ -263,6 +371,49 @@ class ScreenMirrorActivity : Activity() {
         isClickable = true
         isFocusable = true
         setOnClickListener { onClick() }
+    }
+
+    /**
+     * 盖在 WebView 上的一层透明手势区：电视 UI 是 D-pad 焦点模型，轻点发确定、四向滑动发方向，
+     * 比把手指坐标硬映射到电视像素更可靠（M08 的 UI 对 adb 注入的触摸点击并不响应）。
+     */
+    @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
+    private inner class GestureLayer(context: Context) : View(context) {
+        private var downX = 0f
+        private var downY = 0f
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    return true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    val threshold = dp(44).toFloat()
+                    if (abs(dx) > threshold || abs(dy) > threshold) {
+                        if (abs(dx) >= abs(dy)) {
+                            sendKey(if (dx > 0) "DPAD_RIGHT" else "DPAD_LEFT")
+                        } else {
+                            sendKey(if (dy > 0) "DPAD_DOWN" else "DPAD_UP")
+                        }
+                    } else {
+                        performClick()
+                        sendKey("DPAD_CENTER")
+                    }
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> return true
+            }
+            return true
+        }
+
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
+        }
     }
 
     // ---------------------------------------------------------------- render
@@ -497,6 +648,14 @@ class ScreenMirrorActivity : Activity() {
 
         private const val DEFAULT_FPS = 8
         private val FPS_OPTIONS = intArrayOf(4, 8, 12)
+        private val CONTROL_KEYS = listOf(
+            "确定" to "DPAD_CENTER",
+            "返回" to "BACK",
+            "主页" to "HOME",
+            "菜单" to "MENU",
+            "音量-" to "VOLUME_DOWN",
+            "音量+" to "VOLUME_UP",
+        )
 
         fun intent(context: Context, deviceId: String, deviceName: String?): Intent =
             Intent(context, ScreenMirrorActivity::class.java)
