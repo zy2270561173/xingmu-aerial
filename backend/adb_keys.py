@@ -70,6 +70,16 @@ def adb_path() -> str:
     return ""
 
 
+def _python_adb():
+    """没有 adb 二进制时用仓库自带的纯 Python ADB 客户端；不可用则返回 None。"""
+    try:
+        import pyadb_client
+
+        return pyadb_client if pyadb_client.available() else None
+    except Exception:
+        return None
+
+
 def inject_key(serial: str, name: str, timeout: float = 5.0) -> tuple[bool, str]:
     """Runs `adb -s <serial> shell input keyevent <code>`; returns (ok, detail)."""
     code = key_code(name)
@@ -77,7 +87,13 @@ def inject_key(serial: str, name: str, timeout: float = 5.0) -> tuple[bool, str]
         return False, f"unknown key: {name}"
     adb = adb_path()
     if not adb:
-        return False, "adb not found on the server"
+        client = _python_adb()
+        if client is None:
+            return False, "adb not found on the server (and pure-Python adb unavailable)"
+        try:
+            return client.keyevent(serial, code, timeout)
+        except Exception as error:  # noqa: BLE001 - report instead of failing the command
+            return False, f"pyadb: {type(error).__name__}: {error}"[:200]
     try:
         result = subprocess.run(
             [adb, "-s", serial, "shell", "input", "keyevent", str(code)],
@@ -94,10 +110,17 @@ def inject_key(serial: str, name: str, timeout: float = 5.0) -> tuple[bool, str]
 
 
 def capture_png(serial: str, timeout: float = 20.0) -> tuple[bool, bytes | str]:
-    """Grabs one screenshot as PNG over the same adb link; returns bytes on success."""
+    """Grabs one screenshot as PNG/JPEG over the same adb link; returns bytes on success."""
     adb = adb_path()
     if not adb:
-        return False, "adb not found on the server"
+        client = _python_adb()
+        if client is None:
+            return False, "adb not found on the server (and pure-Python adb unavailable)"
+        try:
+            data = client.screencap(serial, timeout)
+        except Exception as error:  # noqa: BLE001 - report instead of failing the command
+            return False, f"pyadb: {type(error).__name__}: {error}"[:200]
+        return _image_or_error(data)
     try:
         result = subprocess.run(
             [adb, "-s", serial, "exec-out", "screencap", "-p"],
@@ -107,9 +130,19 @@ def capture_png(serial: str, timeout: float = 20.0) -> tuple[bool, bytes | str]:
     except (OSError, subprocess.TimeoutExpired) as error:
         return False, f"{type(error).__name__}"
     data = result.stdout or b""
-    if result.returncode != 0 or len(data) < 8 or not data.startswith(b"\x89PNG"):
+    if result.returncode != 0 or not (
+        data.startswith(b"\x89PNG") or data.startswith(b"\xff\xd8")
+    ):
         text = (result.stderr or b"").decode("utf-8", "replace").strip()
         return False, text[:200] or f"exit {result.returncode}"
+    return True, data
+
+
+def _image_or_error(data: bytes) -> tuple[bool, bytes | str]:
+    if len(data) < 512 or not (
+        data.startswith(b"\x89PNG") or data.startswith(b"\xff\xd8")
+    ):
+        return False, "screencap returned no image"
     return True, data
 
 
@@ -122,7 +155,13 @@ def install_apk(serial: str, apk_path: str, timeout: float = 180.0) -> tuple[boo
     """
     adb = adb_path()
     if not adb:
-        return False, "adb not found on the server"
+        client = _python_adb()
+        if client is None:
+            return False, "adb not found on the server (and pure-Python adb unavailable)"
+        try:
+            return client.install_apk(serial, apk_path, timeout)
+        except Exception as error:  # noqa: BLE001 - report instead of failing the command
+            return False, f"pyadb: {type(error).__name__}: {error}"[:200]
     try:
         result = subprocess.run(
             [adb, "-s", serial, "install", "-r", "-g", apk_path],

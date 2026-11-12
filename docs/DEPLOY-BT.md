@@ -203,13 +203,16 @@ location / {
 
 ## 7. adb（按键 / 安装 / 截图）
 
-### 内置隧道（推荐，电视 1.34 / 后端 0.14.13 起）
+### 内置隧道（推荐，电视 1.34 / 后端 0.14.14 起）
 
 电视端 1.34 会主动连后端的 `/ws/tunnel`，后端为它分配 `127.0.0.1:15000` 起的端口，
 写进设备表的 `lan_ip/adb_port`，并自己执行 `adb connect 127.0.0.1:<port>`。服务器只要求：
 
-1. 后端进程的 `PATH` 里有 `adb`（`apt install -y android-tools-adb`，或下载 platform-tools
-   把目录加进 `PATH`）；
+1. **adb 或纯 Python 二选一**：`PATH` 里有 `adb` 就走原来的 adb 快路径；没有 adb 时后端
+   自动用仓库自带的纯 Python ADB（`backend/vendor/adb_shell`，签名用 `rsa` + `pyasn1`，
+   `pip install -r requirements.txt` 会装），不需要 `apt install android-tools-adb`。
+   两条路都需要电视已授权的 `adbkey`/`adbkey.pub`：默认读 `~/.android/adbkey`，Docker 里
+   把它挂到 `/app/.android/`，或用环境变量 `TVCAST_ADBKEY` 指到别的路径；
 2. 后端是**单 worker / 单副本**（`--workers 1`；端口映射是进程内状态，多 worker 会 503）；
 3. 反向代理放行 `/ws/` 的 Upgrade（仓库里的 `web/docker/nginx.conf` 和 `deploy/nginx` 都已包含）；
 4. 电视装 1.34 或更新版本（下载页的 `xingmu-aerial-tv-1.34.apk`）。
@@ -219,12 +222,16 @@ location / {
 ```bash
 curl -s https://<域名>/api/health | python -c "import sys,json;print(json.load(sys.stdin)['adb_tunnels'])"
 # 电视连上后应类似 {'lite-xxxxxxxx': 15000}
+
+# 有 adb 的服务器：
 adb devices                      # 应出现 127.0.0.1:15000 device
 adb -s 127.0.0.1:15000 shell echo ok
+# 没有 adb 的服务器：直接看后台屏幕镜像 / 发一次 snapshot，后端会用纯 Python 客户端
+# 连这个端口；M08 上实测截图约 0.3-0.7 秒/帧（2-3fps）。
 ```
 
-电视重启或端口变化后，后端会自动重新 `adb connect`；最后一条隧道断开时后端会
-`adb disconnect` 并恢复原来的 `lan_ip`。
+电视重启或端口变化后，后端会自动重新 `adb connect`（没有 adb 时由纯 Python 客户端按需重连）；
+最后一条隧道断开时后端会 `adb disconnect` 并恢复原来的 `lan_ip`。
 
 ### 旧版电视 / 手工方案
 

@@ -224,14 +224,30 @@ async def _fast_frames(serial: str, adb: str) -> AsyncIterator[bytes]:
 
 async def _grab(serial: str, timeout: float) -> bytes | None:
     """慢速兜底：优先 exec-out；老固件（如这台 4.4）会在 exec-out 上直接 closed，
-    退回"写到 data/local/tmp 再 pull"的稳妥路径。"""
+    退回"写到 data/local/tmp 再 pull"的稳妥路径。没有 adb 二进制时走纯 Python 客户端。"""
     adb = adb_path()
     if not adb:
-        return None
+        return await _grab_python(serial, timeout)
     frame = await _grab_exec_out(adb, serial, timeout)
     if frame:
         return frame
     return await _grab_via_file(adb, serial, timeout)
+
+
+async def _grab_python(serial: str, timeout: float) -> bytes | None:
+    """无 adb 命令时的截图：纯 Python ADB 客户端，连接按序列号复用。"""
+    try:
+        import pyadb_client
+    except Exception:
+        return None
+    if not pyadb_client.available():
+        return None
+    try:
+        data = await asyncio.to_thread(pyadb_client.screencap, serial, timeout)
+    except Exception as error:  # 无 adb 的服务器上这里失败就是 503 的原因，记一条就够
+        logger.debug("pyadb screencap failed for %s: %s", serial, error)
+        return None
+    return data if _looks_like_image(data) else None
 
 
 async def _grab_exec_out(adb: str, serial: str, timeout: float) -> bytes | None:

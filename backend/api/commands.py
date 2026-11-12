@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from access import require_entitlement, same_lan
@@ -79,7 +81,9 @@ async def send_command(
 
             key_name = str(payload.payload.get("key") or "")
             serial = f"{device.get('lan_ip') or ''}:{device.get('adb_port') or 5555}"
-            ok, detail = inject_key(serial, key_name)
+            # 纯 Python adb / 子进程都可能阻塞；放进线程池，别让事件循环停住
+            # （隧道的数据转发就靠这个事件循环）。
+            ok, detail = await asyncio.to_thread(inject_key, serial, key_name)
             if ok:
                 # The key is already pressed, so the command is done: report it before the device
                 # answers (its own injection attempt fails on 4.x and would show up as an error).
@@ -110,7 +114,7 @@ async def send_command(
                 local = candidates[0] if candidates else local
             if stored and local.is_file():
                 serial = f"{device.get('lan_ip') or ''}:{device.get('adb_port') or 5555}"
-                ok, detail = install_apk(serial, str(local))
+                ok, detail = await asyncio.to_thread(install_apk, serial, str(local))
                 status = "completed" if ok else "failed"
                 request.app.state.db.execute(
                     "UPDATE commands SET status = ?, result_json = ?, completed_at = ?"
@@ -136,13 +140,17 @@ async def send_command(
             from adb_keys import capture_png
 
             serial = f"{device.get('lan_ip') or ''}:{device.get('adb_port') or 5555}"
-            ok, data = capture_png(serial)
+            ok, data = await asyncio.to_thread(capture_png, serial)
             if ok:
+                payload = bytes(data)
                 directory = _Path(request.app.state.settings.apk_dir)
-                name = f"snap-{device_id.replace(':', '_')}-{int(_time.time())}.png"
-                (directory / name).write_bytes(data)  # type: ignore[arg-type]
+                # M08 的 screencap -p 输出 JPEG，不是 PNG；扩展名跟着 magic 走，
+                # 否则静态托管会用 image/png 送一段 JPEG。
+                suffix = "jpg" if payload.startswith(b"\xff\xd8") else "png"
+                name = f"snap-{device_id.replace(':', '_')}-{int(_time.time())}.{suffix}"
+                (directory / name).write_bytes(payload)
                 base = request.app.state.settings.public_base_url or str(request.base_url).rstrip("/")
-                detail = {"success": True, "message": f"{len(data)} bytes", "url": f"{base}/static/apk/{name}"}
+                detail = {"success": True, "message": f"{len(payload)} bytes", "url": f"{base}/static/apk/{name}"}
                 status_value = "completed"
             else:
                 detail = {"success": False, "message": str(data)[:200]}

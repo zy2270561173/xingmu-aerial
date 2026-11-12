@@ -369,7 +369,11 @@ class AdbTunnelManager:
         item.last_connect_attempt = now
         adb = adb_path()
         if not adb:
-            logger.warning("adb tunnel: adb not found on the server; tunnel up but adb cannot use it")
+            # 镜像里没有 adb 时，adb_keys/screen 会走纯 Python 客户端，直接连这个端口。
+            logger.info(
+                "adb tunnel: no adb binary; pure-Python adb will attach to 127.0.0.1:%s on demand",
+                item.port,
+            )
             return
         serial = f"127.0.0.1:{item.port}"
         await self._run_adb(adb, ["connect", serial], f"connect {serial}")

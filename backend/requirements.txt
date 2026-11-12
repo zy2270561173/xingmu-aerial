@@ -6,3 +6,6 @@ PyJWT==2.13.0
 python-multipart==0.0.32
 httpx==0.28.1
 pytest==9.1.1
+# 纯 Python ADB（vendor/adb_shell）的签名依赖；服务器没有 adb 二进制时用它兜底
+rsa==4.9.1
+pyasn1==0.6.5
