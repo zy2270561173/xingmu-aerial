@@ -39,6 +39,8 @@ BOUNDARY = "xingmuframe"
 # 一条持久管线已经能把 M08 的 CPU 吃到 25% 左右；多个观众同时开 fast path 会把电视拖到卡顿。
 # 只给一个 fast slot，其余观众走老的慢速兜底，保证每个人至少能看。
 _FAST_SLOTS = asyncio.Semaphore(1)
+# 最近一次拿不到画面的原因；503 时带在 detail 里，省得只看一句“访问不到 adb”。
+_last_adb_error = ""
 
 
 def _serial(device: dict) -> str:
@@ -225,29 +227,44 @@ async def _fast_frames(serial: str, adb: str) -> AsyncIterator[bytes]:
 async def _grab(serial: str, timeout: float) -> bytes | None:
     """慢速兜底：优先 exec-out；老固件（如这台 4.4）会在 exec-out 上直接 closed，
     退回"写到 data/local/tmp 再 pull"的稳妥路径。没有 adb 二进制时走纯 Python 客户端。"""
+    global _last_adb_error
     adb = adb_path()
     if not adb:
         return await _grab_python(serial, timeout)
     frame = await _grab_exec_out(adb, serial, timeout)
     if frame:
+        _last_adb_error = ""
         return frame
-    return await _grab_via_file(adb, serial, timeout)
+    frame = await _grab_via_file(adb, serial, timeout)
+    if frame:
+        _last_adb_error = ""
+        return frame
+    _last_adb_error = f"adb 命令拿不到画面（serial={serial}）"
+    return None
 
 
 async def _grab_python(serial: str, timeout: float) -> bytes | None:
     """无 adb 命令时的截图：纯 Python ADB 客户端，连接按序列号复用。"""
+    global _last_adb_error
     try:
         import pyadb_client
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - report why the fallback is unavailable
+        _last_adb_error = f"pyadb_client 无法导入：{type(error).__name__}: {error}"
         return None
     if not pyadb_client.available():
+        _last_adb_error = "pyadb 不可用（vendor/adb_shell、rsa、pyasn1 缺失？）"
         return None
     try:
         data = await asyncio.to_thread(pyadb_client.screencap, serial, timeout)
     except Exception as error:  # 无 adb 的服务器上这里失败就是 503 的原因，记一条就够
+        _last_adb_error = f"pyadb: {type(error).__name__}: {error}"
         logger.debug("pyadb screencap failed for %s: %s", serial, error)
         return None
-    return data if _looks_like_image(data) else None
+    if not _looks_like_image(data):
+        _last_adb_error = "pyadb 拿到的不是图片"
+        return None
+    _last_adb_error = ""
+    return data
 
 
 async def _grab_exec_out(adb: str, serial: str, timeout: float) -> bytes | None:
@@ -343,10 +360,10 @@ async def screen_mjpeg(
     # 而不是开一条永远没有帧的流让前端以为"画面中断"。
     first = await _grab(serial, timeout=4.0)
     if first is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "服务器无法访问电视的 adb（通常是后端与电视不在同一网络，需内网隧道或端口映射）",
-        )
+        detail = "服务器无法访问电视的 adb（通常是后端与电视不在同一网络，需内网隧道或端口映射）"
+        if _last_adb_error:
+            detail += f"；最近一次失败：{_last_adb_error[:200]}"
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail)
     return StreamingResponse(
         _frames(serial, fps),
         media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+import os
 import time
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -30,6 +31,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         # /ws/tunnel 的端口映射只存在于本进程内；上一轮留下的 127.0.0.1 一定是残影。
         await app.state.adb_tunnels.clear_stale()
+        # 启动时把 adb 的三种运行方式打一行：排查 503 时先看这行，比猜快。
+        try:
+            from adb_keys import adb_path
+
+            import pyadb_client
+
+            key_path = pyadb_client.adb_key_path()
+            print(
+                "[adb] binary={} python={} key={} ({})".format(
+                    bool(adb_path()),
+                    pyadb_client.available(),
+                    os.path.isfile(key_path),
+                    key_path,
+                ),
+                flush=True,
+            )
+        except Exception as error:  # noqa: BLE001 - a probe must never block startup
+            print(f"[adb] runtime probe failed: {error}", flush=True)
         # P2P 的 UDP 会合是可选能力：端口被占用时不能让整个后端起不来（注册、心跳、遥控、
         # 会员、支付都与它无关）。绑定失败就降级，客户端会自动回落到后端转发。
         try:
@@ -55,7 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="星投屏控制中心",
-        version="0.14.14",
+        version="0.14.15",
         description="设备认证、Agent 上报、控制信令、P2P 协商与安全托管播放页。",
         lifespan=lifespan,
     )
@@ -161,6 +180,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health(request: Request) -> dict:
         connections = await request.app.state.hub.stats()
         rendezvous_up = getattr(request.app.state, "rendezvous_transport", None) is not None
+        # 没有 adb 的 Docker 里，这三种状态决定按键/截图能不能用；只暴露布尔值。
+        adb_runtime = {"binary": False, "python": False, "key": False}
+        try:
+            from adb_keys import adb_path
+
+            import pyadb_client
+
+            adb_runtime["binary"] = bool(adb_path())
+            adb_runtime["python"] = pyadb_client.available()
+            adb_runtime["key"] = os.path.isfile(pyadb_client.adb_key_path())
+        except Exception:  # noqa: BLE001 - health must stay available
+            pass
         return {
             "status": "ok",
             "version": request.app.version,
@@ -175,6 +206,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "p2p_sessions": request.app.state.p2p_sessions.stats(),
             # 排查用：哪台电视的 adb 现在映射到本机哪个端口（127.0.0.1）。
             "adb_tunnels": request.app.state.adb_tunnels.mapping(),
+            "adb_runtime": adb_runtime,
             **connections,
         }
 
