@@ -1971,6 +1971,357 @@ html[data-theme="aerial"] .dpad button[class*="animal-btn"] {
   border-radius: 16px;
 }
 
+/* ---------- per-view: music ---------- */
+
+html[data-theme="aerial"] .music-device-select {
+  flex: 0 0 auto;
+  width: min(320px, 100%);
+  max-width: 320px;
+}
+
+html[data-theme="aerial"] .music-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(350px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+html[data-theme="aerial"] .music-side {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+html[data-theme="aerial"] .music-panel {
+  position: relative;
+  min-width: 0;
+  padding: 20px;
+  overflow: hidden;
+  background:
+    linear-gradient(155deg, var(--field-bg) 0%, transparent 42%),
+    var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(145%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(145%);
+}
+
+html[data-theme="aerial"] .music-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-border-strong), transparent);
+}
+
+html[data-theme="aerial"] .now-panel {
+  background:
+    linear-gradient(135deg, var(--accent-soft) 0%, transparent 62%),
+    var(--glass-bg);
+}
+
+html[data-theme="aerial"] .music-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+html[data-theme="aerial"] .music-panel-head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+html[data-theme="aerial"] .music-panel-head p {
+  margin: 5px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+html[data-theme="aerial"] .music-quality {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+html[data-theme="aerial"] .music-search-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+html[data-theme="aerial"] .music-search-row > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+html[data-theme="aerial"] .music-search-row > button {
+  flex: 0 0 auto;
+}
+
+html[data-theme="aerial"] .music-result-list,
+html[data-theme="aerial"] .music-queue {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+html[data-theme="aerial"] .music-result-list {
+  max-height: 540px;
+  overflow: auto;
+}
+
+html[data-theme="aerial"] .music-song-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--glass-border);
+  border-radius: 12px;
+  transition:
+    background var(--aerial-duration-fast) var(--aerial-ease-out),
+    border-color var(--aerial-duration-fast) var(--aerial-ease-out);
+}
+
+html[data-theme="aerial"] .music-song-row:last-child {
+  border-bottom-color: transparent;
+}
+
+html[data-theme="aerial"] .music-song-row:hover {
+  background: var(--field-bg);
+}
+
+html[data-theme="aerial"] .music-cover {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text-faint);
+  background: var(--field-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+}
+
+html[data-theme="aerial"] .music-cover img {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  object-fit: cover;
+}
+
+html[data-theme="aerial"] .music-song-meta,
+html[data-theme="aerial"] .music-now-meta,
+html[data-theme="aerial"] .music-queue-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+html[data-theme="aerial"] .music-song-meta strong,
+html[data-theme="aerial"] .music-now-meta strong,
+html[data-theme="aerial"] .music-queue-meta strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme="aerial"] .music-song-meta span,
+html[data-theme="aerial"] .music-now-meta span,
+html[data-theme="aerial"] .music-queue-meta span {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme="aerial"] .music-duration {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+html[data-theme="aerial"] .music-inline-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--text-dim);
+  background: var(--glass-bg-soft);
+  border: 1px dashed var(--glass-border);
+  border-radius: 16px;
+  font-size: 13px;
+  text-align: center;
+}
+
+html[data-theme="aerial"] .music-inline-empty svg {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+html[data-theme="aerial"] .music-now {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--field-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+}
+
+html[data-theme="aerial"] .music-now-cover {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text-faint);
+  background: var(--field-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+}
+
+html[data-theme="aerial"] .music-now-cover img {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  object-fit: cover;
+}
+
+html[data-theme="aerial"] .music-now-meta strong {
+  font-size: 17px;
+}
+
+html[data-theme="aerial"] .music-now-meta small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme="aerial"] .music-progress {
+  margin-top: 16px;
+}
+
+html[data-theme="aerial"] .music-progress [class*="animal-progress"] {
+  width: 100%;
+  max-width: none;
+}
+
+html[data-theme="aerial"] .music-progress [class*="animal-labelWrap"] {
+  display: none;
+}
+
+html[data-theme="aerial"] .music-progress-time {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme="aerial"] .music-queue {
+  max-height: 420px;
+  overflow: auto;
+}
+
+html[data-theme="aerial"] .music-queue-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--glass-border);
+  border-radius: 12px;
+  transition:
+    background var(--aerial-duration-fast) var(--aerial-ease-out),
+    border-color var(--aerial-duration-fast) var(--aerial-ease-out);
+}
+
+html[data-theme="aerial"] .music-queue-row:last-child {
+  border-bottom-color: transparent;
+}
+
+html[data-theme="aerial"] .music-queue-row.current {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+html[data-theme="aerial"] .music-queue-index {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+html[data-theme="aerial"] .music-queue-row.current .music-queue-index,
+html[data-theme="aerial"] .music-queue-row.current .music-queue-meta span {
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  html[data-theme="aerial"] .music-layout {
+    grid-template-columns: 1fr;
+  }
+
+  html[data-theme="aerial"] .music-device-select {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 600px) {
+  html[data-theme="aerial"] .music-panel {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  html[data-theme="aerial"] .music-song-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  html[data-theme="aerial"] .music-duration {
+    display: none;
+  }
+
+  html[data-theme="aerial"] .music-now-cover {
+    width: 60px;
+    height: 60px;
+    flex-basis: 60px;
+  }
+}
+
 /* ---------- VIP badges: keep the hue, drop the pastel plate ---------- */
 
 html[data-theme="aerial"] .vip-sky[class*="animal-tag"] {

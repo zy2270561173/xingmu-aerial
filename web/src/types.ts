@@ -242,3 +242,82 @@ export interface RealtimeMessage {
   data?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+export interface MusicDevice {
+  device_id: string;
+  name: string;
+  online: boolean;
+}
+
+export interface MusicSong {
+  mid: string;
+  name: string;
+  title: string;
+  singer: string;
+  singerText: string;
+  album: string;
+  cover: string;
+  interval: number;
+}
+
+export interface MusicQueueItem {
+  id: string;
+  mid: string;
+  name: string;
+  singer: string;
+  album: string;
+  cover: string;
+  interval: number;
+  quality: string;
+}
+
+export interface MusicState {
+  device_id?: string;
+  online: boolean;
+  playing: boolean;
+  prepared: boolean;
+  position_ms: number;
+  duration_ms: number;
+  queue: MusicQueueItem[];
+  index: number;
+  current?: MusicQueueItem | null;
+  quality?: string;
+  source?: string;
+  updated_at?: number;
+}
+
+export interface MusicSearchResponse {
+  code: number;
+  data: {
+    keyword: string;
+    list: MusicSong[];
+    total: number;
+  };
+}
+
+export interface MusicRequestPayload {
+  device_id: string;
+  mid: string;
+  name: string;
+  singer: string;
+  album?: string;
+  cover?: string;
+  interval?: number;
+  quality?: string;
+}
+
+export interface MusicRequestResult {
+  ok: boolean;
+  delivered: boolean;
+  queued: MusicQueueItem;
+  queue: MusicQueueItem[];
+  count: number;
+  resolve_error: string;
+}
+
+export interface MusicQueueMutationResult {
+  ok: boolean;
+  delivered: boolean;
+  queue: MusicQueueItem[];
+  index: number;
+}

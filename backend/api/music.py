@@ -429,8 +429,10 @@ async def _enqueue(request: Request, device_id: str, body: SongBody) -> dict[str
     if len(queue) > MAX_QUEUE:
         del queue[: len(queue) - MAX_QUEUE]
     # Show the request on the phone at once; the TV's next music_state makes the order canonical.
+    # record_state() aliases _queues[device_id] with state["queue"], so appending there again would
+    # duplicate every request — only fix up the index for the optimistic view.
     state = _state.get(device_id)
-    if state is not None:
+    if state is not None and state.get("queue") is not queue:
         state["queue"].append({key: entry[key] for key in (
             "id", "mid", "name", "singer", "album", "cover", "interval", "quality"
         )})

@@ -14,6 +14,12 @@ import type {
   DeviceEvent,
   InstalledApp,
   HostedPlayerSession,
+  MusicDevice,
+  MusicQueueMutationResult,
+  MusicRequestPayload,
+  MusicRequestResult,
+  MusicSearchResponse,
+  MusicState,
   ReleasePublishRequest,
   SystemStatus,
   User,
@@ -187,6 +193,30 @@ export async function testEpayConnection(payload: { epay_base_url: string; epay_
 
 export async function getSystemStatus() {
   return (await http.get<SystemStatus>('/api/system/status')).data;
+}
+
+export async function getMusicDevices() {
+  return (await http.get<MusicDevice[]>('/api/music/devices')).data;
+}
+
+export async function searchMusic(q: string, limit = 20) {
+  return (await http.get<MusicSearchResponse>('/api/music/search', { params: { q, limit } })).data;
+}
+
+export async function requestMusic(payload: MusicRequestPayload) {
+  return (await http.post<MusicRequestResult>('/api/music/request', payload)).data;
+}
+
+export async function getMusicState(deviceId: string) {
+  return (await http.get<MusicState>(`/api/music/state/${encodeURIComponent(deviceId)}`)).data;
+}
+
+export async function deleteMusicQueueItem(deviceId: string, itemId: string) {
+  return (
+    await http.delete<MusicQueueMutationResult>(
+      `/api/music/queue/${encodeURIComponent(deviceId)}/${encodeURIComponent(itemId)}`,
+    )
+  ).data;
 }
 
 export function readableError(error: unknown): string {

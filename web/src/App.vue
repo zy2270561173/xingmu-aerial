@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Badge, Button } from 'animal-island-ui-vue';
-import { BadgeDollarSign, CheckCheck, LogOut, Monitor, RadioTower, Settings, SlidersHorizontal, Users } from '@lucide/vue';
+import { BadgeDollarSign, CheckCheck, LogOut, Monitor, Music, RadioTower, Settings, SlidersHorizontal, Users } from '@lucide/vue';
 import { useAuthStore } from './stores/auth';
 import { useDeviceStore } from './stores/devices';
 import { ControlSocket } from './ws/control';
@@ -21,6 +21,7 @@ const nav = computed(() => [
   { name: 'users', label: '账号', icon: Users, show: auth.user?.role === 'admin' },
   { name: 'sales', label: '会员销售', icon: BadgeDollarSign, show: auth.user?.role === 'admin' },
   { name: 'remote', label: '遥控', icon: SlidersHorizontal, show: true },
+  { name: 'music', label: '点歌', icon: Music, show: auth.user?.role === 'admin' },
   { name: 'settings', label: '设置', icon: Settings, show: auth.user?.role === 'admin' },
 ]);
 
