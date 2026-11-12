@@ -408,6 +408,15 @@ class ScreenMirrorActivity : Activity() {
                   connected = true; hide(); clearInterval(poll);
                 }
               }, 400);
+              // 连接被后端/网络直接掐断时，Chrome 的 <img> 不一定会触发 onerror，
+              // 但会把 naturalWidth 归零；守住这个变化，断流时才能真的弹出重试提示。
+              setInterval(function () {
+                if (connected && img.naturalWidth === 0) {
+                  connected = false;
+                  img.style.visibility = 'hidden';
+                  show('画面中断，点刷新重试', true);
+                }
+              }, 1000);
               setTimeout(function () {
                 if (!connected && !failed) show('正在连接电视画面…', false);
               }, 1500);
