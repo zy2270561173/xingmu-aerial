@@ -55,7 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="星投屏控制中心",
-        version="0.14.12",
+        version="0.14.13",
         description="设备认证、Agent 上报、控制信令、P2P 协商与安全托管播放页。",
         lifespan=lifespan,
     )
