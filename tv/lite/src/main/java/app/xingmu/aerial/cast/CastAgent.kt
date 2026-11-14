@@ -374,6 +374,7 @@ object CastAgent {
             url = "",
             directUrl = payload.optString("url"),
             id = payload.optString("id"),
+            vid = payload.optString("vid"),
         )
         MusicPlayback.enqueue(ctx, song)
         MusicActivity.start(ctx)

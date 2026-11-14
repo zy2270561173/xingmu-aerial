@@ -17,6 +17,8 @@ class MusicSong(
     /** The CDN's own URL, used only if the backend relay cannot be played. */
     var directUrl: String = "",
     var id: String = "",
+    /** The song's QM MV id; empty means the song has no MV and the jukebox stays on audio. */
+    var vid: String = "",
 ) {
     /** "歌名 - 歌手", the form the queue shows. */
     val label: String get() = if (singer.isEmpty()) name else "$name - $singer"

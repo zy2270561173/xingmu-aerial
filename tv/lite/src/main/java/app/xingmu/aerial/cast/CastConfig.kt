@@ -39,6 +39,14 @@ object CastConfig {
     var enabled: Boolean = true
         private set
 
+    /** 点歌台: play the song's MV when it has one. Off means the page stays a record player. */
+    var mvEnabled: Boolean = true
+        private set
+
+    /** 点歌台 MV source: "qm" (the song's own MV) or "bili" (searched by 歌名 + 歌手). */
+    var mvSource: String = MV_SOURCE_QM
+        private set
+
     fun init(context: Context) {
         if (::prefs.isInitialized) return
         prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -55,7 +63,23 @@ object CastConfig {
         }
         enabled = prefs.getBoolean("enabled", true)
         adbPort = prefs.getInt("adb_port", 5555).takeIf { it in 1..65535 } ?: 5555
+        mvEnabled = prefs.getBoolean("mv_enabled", true)
+        mvSource = normaliseMvSource(prefs.getString("mv_source", MV_SOURCE_QM))
     }
+
+    fun setMvEnabled(value: Boolean) {
+        mvEnabled = value
+        prefs.edit().putBoolean("mv_enabled", value).apply()
+    }
+
+    /** Only the two sources the backend knows; anything else (a corrupted pref) means QM. */
+    fun setMvSource(value: String) {
+        mvSource = normaliseMvSource(value)
+        prefs.edit().putString("mv_source", mvSource).apply()
+    }
+
+    private fun normaliseMvSource(value: String?): String =
+        if (value == MV_SOURCE_BILI) MV_SOURCE_BILI else MV_SOURCE_QM
 
     val configured: Boolean get() = backendUrl.isNotEmpty()
 
@@ -114,4 +138,9 @@ object CastConfig {
         val model = android.os.Build.MODEL.orEmpty().trim()
         return if (model.isEmpty()) "客厅电视" else "星幕-$model"
     }
+
+    /** The song's own MV, from the vid the search result carried. */
+    const val MV_SOURCE_QM = "qm"
+    /** A MV searched on B站 by 歌名 + 歌手. */
+    const val MV_SOURCE_BILI = "bili"
 }

@@ -22,6 +22,8 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -51,6 +53,10 @@ class MusicActivity : Activity() {
     private lateinit var root: FrameLayout
 
     private lateinit var disc: DiscView
+    private lateinit var mvView: TextureView
+    private lateinit var mvBadge: TextView
+    private lateinit var mvTitleView: TextView
+    private lateinit var biliListButton: PillButton
     private lateinit var titleView: TextView
     private lateinit var singerView: TextView
     private lateinit var albumView: TextView
@@ -63,6 +69,8 @@ class MusicActivity : Activity() {
     private lateinit var nextView: TextView
     private lateinit var playButton: PillButton
     private lateinit var qualityButton: PillButton
+    private lateinit var mvButton: PillButton
+    private lateinit var sourceButton: PillButton
     private lateinit var qrView: ImageView
     private lateinit var qrLabel: TextView
     private lateinit var backdrop: BackdropView
@@ -74,6 +82,14 @@ class MusicActivity : Activity() {
     private var qrUrl = ""
     private var qrCheckAt = 0L
     private var sheet: View? = null
+    /** The B站 result picker; [biliSheetAuto] means the countdown opened it and may close it. */
+    private var biliSheet: View? = null
+    private var biliSheetAuto = false
+    private var biliSheetHint: TextView? = null
+    /** The search a sheet was already opened for, so closing it is not undone by the next tick. */
+    private var shownBiliToken = -1
+    /** The lyric list is INVISIBLE (not gone) while a MV plays: it keeps its scroll and highlight. */
+    private var lyricsHidden = false
     private val work = Executors.newSingleThreadExecutor()
     private val musicListener: (MusicSnapshot) -> Unit = { snapshot -> render(snapshot) }
 
@@ -145,6 +161,10 @@ class MusicActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (biliSheet != null) {
+            closeBiliSheet()
+            return
+        }
         val overlay = sheet
         if (overlay != null) {
             closeSheet()
@@ -170,6 +190,53 @@ class MusicActivity : Activity() {
 
         disc = DiscView(this)
         place(disc, 26f, 110f, 334f, 334f)
+
+        // MV mode puts the video where the record was; 16:9 inside the disc's square column.
+        // A TextureView (not SurfaceView) because the surface has to exist before the player is
+        // built: ijk's MediaCodec wants its output surface at configure time on this 4.4 box.
+        // It therefore stays attached and VISIBLE, with alpha 0 while the record is showing.
+        mvView = TextureView(this).apply {
+            alpha = 0f
+            isClickable = false
+            isFocusable = false
+            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    MusicPlayback.setSurface(Surface(texture))
+                }
+
+                override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, width: Int, height: Int) = Unit
+
+                override fun onSurfaceTextureDestroyed(texture: android.graphics.SurfaceTexture): Boolean {
+                    // Back or the screensaver: the video keeps decoding into nothing, the audio goes on.
+                    MusicPlayback.setSurface(null)
+                    return true
+                }
+
+                override fun onSurfaceTextureUpdated(texture: android.graphics.SurfaceTexture) = Unit
+            }
+        }
+        place(mvView, 26f, 110f, 334f, 188f)
+
+        mvBadge = label(11f, 600, Ui.WHITE).apply {
+            gravity = Gravity.CENTER
+            text = "MV·QM"
+            setBackgroundDrawable(rounded(0xCC6D5BFF.toInt(), 0x66FFFFFF, 9f))
+            visibility = View.GONE
+        }
+        place(mvBadge, 34f, 118f, 86f, 22f)
+
+        mvTitleView = label(11f, 500, 0xCCEBEBF5.toInt()).apply {
+            maxLines = 2
+            setLineSpacing(Ui.px(2f), 1f)
+            visibility = View.GONE
+        }
+        place(mvTitleView, 26f, 304f, 334f, 40f)
+
+        // 播放中换 B站 MV：结果列表的第二入口（倒计时/开播后收起的面板可以再打开）。
+        biliListButton = PillButton(this, "B站列表")
+        place(biliListButton, 26f, 352f, 116f, 38f)
+        biliListButton.visibility = View.GONE
+        biliListButton.setOnClickListener { openBiliSheet(MusicPlayback.snapshot(), auto = false) }
 
         titleView = label(27f, 600, Ui.WHITE).apply {
             maxLines = 1
@@ -207,23 +274,38 @@ class MusicActivity : Activity() {
         place(statusView, 380f, 488f, 400f, 20f)
 
         val prev = PillButton(this, "上一首")
-        place(prev, 380f, 438f, 66f, 46f)
+        place(prev, 380f, 438f, 58f, 46f)
         prev.setOnClickListener { MusicPlayback.previous() }
 
         playButton = PillButton(this, "播放")
-        place(playButton, 454f, 438f, 100f, 46f)
+        place(playButton, 444f, 438f, 84f, 46f)
         playButton.setOnClickListener { MusicPlayback.toggle() }
 
         val next = PillButton(this, "下一首")
-        place(next, 562f, 438f, 66f, 46f)
+        place(next, 534f, 438f, 58f, 46f)
         next.setOnClickListener { MusicPlayback.next() }
 
         qualityButton = PillButton(this, "音质")
-        place(qualityButton, 636f, 438f, 78f, 46f)
+        place(qualityButton, 598f, 438f, 58f, 46f)
         qualityButton.setOnClickListener { showQualitySheet() }
 
+        mvButton = PillButton(this, "MV 开")
+        place(mvButton, 662f, 438f, 64f, 46f)
+        mvButton.setOnClickListener { MusicPlayback.setMvEnabled(!MusicPlayback.mvEnabled()) }
+
+        sourceButton = PillButton(this, "源 QM")
+        place(sourceButton, 732f, 438f, 74f, 46f)
+        sourceButton.setOnClickListener {
+            val nextSource = if (MusicPlayback.mvSource() == CastConfig.MV_SOURCE_BILI) {
+                CastConfig.MV_SOURCE_QM
+            } else {
+                CastConfig.MV_SOURCE_BILI
+            }
+            MusicPlayback.setMvSource(nextSource)
+        }
+
         val back = PillButton(this, "返回")
-        place(back, 722f, 438f, 58f, 46f)
+        place(back, 812f, 438f, 40f, 46f)
         back.setOnClickListener { finish() }
 
         // Explicit D-pad order: geometry alone puts the sheet and the disc into the search too.
@@ -231,18 +313,29 @@ class MusicActivity : Activity() {
         playButton.id = ID_PLAY
         next.id = ID_NEXT
         qualityButton.id = ID_QUALITY
+        mvButton.id = ID_MV
+        sourceButton.id = ID_SOURCE
         back.id = ID_BACK
+        biliListButton.id = ID_BILI_LIST
         prev.nextFocusRightId = playButton.id
         playButton.nextFocusRightId = next.id
         next.nextFocusRightId = qualityButton.id
-        qualityButton.nextFocusRightId = back.id
+        qualityButton.nextFocusRightId = mvButton.id
+        mvButton.nextFocusRightId = sourceButton.id
+        sourceButton.nextFocusRightId = back.id
         back.nextFocusRightId = prev.id
-        back.nextFocusLeftId = qualityButton.id
+        back.nextFocusLeftId = sourceButton.id
+        sourceButton.nextFocusLeftId = mvButton.id
+        mvButton.nextFocusLeftId = qualityButton.id
         qualityButton.nextFocusLeftId = next.id
         next.nextFocusLeftId = playButton.id
         playButton.nextFocusLeftId = prev.id
         prev.nextFocusLeftId = back.id
-        for (button in listOf(prev, playButton, next, qualityButton, back)) button.nextFocusUpId = playButton.id
+        for (button in listOf(prev, playButton, next, qualityButton, mvButton, sourceButton, back)) {
+            button.nextFocusUpId = playButton.id
+        }
+        biliListButton.nextFocusDownId = playButton.id
+
 
         val hint = label(11f, 500, 0x4DEBEBF5)
         hint.text = "方向键选择 · OK 确认 · 返回键离开"
@@ -363,17 +456,67 @@ class MusicActivity : Activity() {
             fallbackDuration = 0L
             refreshQueue(emptyList())
             updatePlayButton()
-            statusView.text = snapshot.status
+            applyMvState(snapshot)
+            updateStatus(snapshot)
             return
         }
         showSong(song)
         fallbackDuration = song.interval * 1000L
         refreshQueue(snapshot.upcoming)
         updatePlayButton()
-        statusView.text = snapshot.status
+        applyMvState(snapshot)
+        updateStatus(snapshot)
         if (snapshot.durationMs <= 0L && fallbackDuration > 0) {
             timeView.text = format(snapshot.positionMs) + " / " + format(fallbackDuration)
         }
+    }
+
+    private fun updateStatus(snapshot: MusicSnapshot) {
+        statusView.text = snapshot.notice.ifEmpty { snapshot.status }
+    }
+
+    /**
+     * MV on: the video owns the disc's column and the lyric list is made INVISIBLE (not removed,
+     * not rebuilt) so coming back to audio restores the same scroll position and highlight.
+     */
+    private fun applyMvState(snapshot: MusicSnapshot) {
+        val mvActive = snapshot.mvActive
+        val bili = snapshot.mvSource == CastConfig.MV_SOURCE_BILI
+        disc.visibility = if (mvActive) View.GONE else View.VISIBLE
+        // alpha, not GONE: the TextureView's surface must live on so the next MV has a target.
+        mvView.alpha = if (mvActive) 1f else 0f
+        mvBadge.visibility = if (mvActive) View.VISIBLE else View.GONE
+        mvTitleView.visibility = if (mvActive) View.VISIBLE else View.GONE
+        mvBadge.text = if (bili) "MV·B站" else "MV·QM"
+        mvTitleView.text = when {
+            !mvActive -> ""
+            bili && snapshot.mvTitle.isNotEmpty() -> snapshot.mvTitle
+            bili -> "B 站 MV"
+            else -> ""
+        }
+        mvButton.text = if (snapshot.mvEnabled) "MV 开" else "MV 关"
+        sourceButton.text = if (bili) "源 B站" else "源 QM"
+
+        // During B站 playback the picker's second entrance sits under the video (Up from 播放).
+        val showBiliList = bili && snapshot.mvActive
+        biliListButton.visibility = if (showBiliList) View.VISIBLE else View.GONE
+        biliListButton.isFocusable = showBiliList
+        playButton.nextFocusUpId = if (showBiliList) ID_BILI_LIST else ID_PLAY
+
+        if (mvActive != lyricsHidden) {
+            lyricsHidden = mvActive
+            lyricScroll.visibility = if (mvActive) View.INVISIBLE else View.VISIBLE
+            if (!mvActive) {
+                // Back on audio: jump straight to the line the song is on, no list rebuild.
+                handler.post { syncLyric(MusicPlayback.positionMs(), force = true) }
+            }
+        }
+        if (mvActive && biliSheet != null && biliSheetAuto) closeBiliSheet()
+        if (!bili) closeBiliSheet()
+        // A new search (next song, re-search) invalidates the rows the open sheet is showing.
+        if (biliSheet != null && snapshot.biliToken != shownBiliToken) closeBiliSheet()
+        refreshBiliSheet(snapshot)
+        maybeOpenBiliSheet(snapshot)
     }
 
     /** Paints the song's metadata; loading its lyric and cover happens once per song. */
@@ -448,20 +591,24 @@ class MusicActivity : Activity() {
         addLyricBottom()
     }
 
-    private fun syncLyric(positionMs: Long) {
+    private fun syncLyric(positionMs: Long, force: Boolean = false) {
         if (lyrics.isEmpty()) return
         var active = -1
         for (index in lyrics.indices) {
             if (lyrics[index].timeMs <= positionMs + 120L) active = index else break
         }
-        if (active == lyricIndex) return
+        if (active == lyricIndex && !force) return
         if (lyricIndex in lyricViews.indices) styleLyric(lyricViews[lyricIndex], false)
         lyricIndex = active
         if (active in lyricViews.indices) {
             val view = lyricViews[active]
             styleLyric(view, true)
-            val target = view.top + view.height / 2 - lyricScroll.height / 2
-            lyricScroll.smoothScrollTo(0, max(0, target))
+            // While the MV owns the screen the list is INVISIBLE; the highlight keeps tracking and
+            // the scroll catches up the moment audio mode brings it back.
+            if (lyricScroll.visibility == View.VISIBLE && lyricScroll.height > 0) {
+                val target = view.top + view.height / 2 - lyricScroll.height / 2
+                lyricScroll.smoothScrollTo(0, max(0, target))
+            }
         }
     }
 
@@ -618,6 +765,160 @@ class MusicActivity : Activity() {
 
     private fun updateQualityBadge(quality: String) {
         qualityBadge.text = qualityShort(quality)
+    }
+
+    // ---- B站 MV picker ----
+
+    /**
+     * The search results for the playing song. Opened automatically while the countdown runs (so
+     * the remote can pick another hit before the first one starts) and again from 「B站列表」.
+     */
+    private fun maybeOpenBiliSheet(snapshot: MusicSnapshot) {
+        if (!snapshot.mvEnabled || snapshot.mvSource != CastConfig.MV_SOURCE_BILI) return
+        if (snapshot.biliResults.isEmpty() || snapshot.biliToken <= 0) return
+        if (snapshot.biliToken == shownBiliToken) return
+        if (biliSheet != null || sheet != null || isFinishing) return
+        openBiliSheet(snapshot, auto = true)
+    }
+
+    private fun openBiliSheet(snapshot: MusicSnapshot, auto: Boolean) {
+        if (biliSheet != null || snapshot.biliResults.isEmpty()) return
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(0xC0000000.toInt())
+            isClickable = true
+            setOnClickListener { closeBiliSheet() }
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundDrawable(rounded(0xF2232328.toInt(), 0x33FFFFFF, 18f))
+            setPadding(Ui.pxi(22f), Ui.pxi(16f), Ui.pxi(22f), Ui.pxi(14f))
+            isClickable = true
+        }
+        val heading = label(17f, 600, Ui.WHITE).apply { text = "B站 MV" }
+        panel.addView(heading, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(30f)))
+        val hint = label(12f, 500, 0x99EBEBF5.toInt()).apply {
+            text = biliHint(snapshot)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        panel.addView(hint, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(24f)))
+        biliSheetHint = hint
+
+        val rows = ArrayList<TextView>()
+        for ((index, mv) in snapshot.biliResults.take(5).withIndex()) {
+            val row = TextView(this).apply {
+                text = biliRowLabel(index, mv)
+                textPx(13f)
+                typeface = Ui.font(if (index == snapshot.biliSelected) 600 else 500)
+                setTextColor(if (index == snapshot.biliSelected) 0xFFCFC7FF.toInt() else 0xCCEBEBF5.toInt())
+                includeFontPadding = false
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(Ui.pxi(12f), 0, Ui.pxi(12f), 0)
+                isFocusable = true
+                isClickable = true
+                setBackgroundDrawable(rounded(0x00FFFFFF, 0, 12f))
+                setOnFocusChangeListener { view, focused ->
+                    val text = view as TextView
+                    text.setTextColor(if (focused) Ui.ON_FOCUS else if (index == snapshot.biliSelected) 0xFFCFC7FF.toInt() else 0xCCEBEBF5.toInt())
+                    text.setBackgroundDrawable(if (focused) rounded(0xFFF5F5F7.toInt(), 0, 12f) else rounded(0x00FFFFFF, 0, 12f))
+                }
+                setOnClickListener {
+                    MusicPlayback.selectBili(index)
+                    closeBiliSheet()
+                }
+            }
+            panel.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(48f)).apply { topMargin = Ui.pxi(3f) })
+            rows.add(row)
+        }
+
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val research = TextView(this).apply {
+            text = "重新搜索"
+            textPx(13f)
+            typeface = Ui.font(600)
+            setTextColor(0xCCEBEBF5.toInt())
+            includeFontPadding = false
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isClickable = true
+            setBackgroundDrawable(rounded(0x24FFFFFF, 0x33FFFFFF, 18f))
+            setOnFocusChangeListener { view, focused ->
+                val text = view as TextView
+                text.setTextColor(if (focused) Ui.ON_FOCUS else 0xCCEBEBF5.toInt())
+                text.setBackgroundDrawable(if (focused) rounded(0xFFF5F5F7.toInt(), 0, 18f) else rounded(0x24FFFFFF, 0x33FFFFFF, 18f))
+            }
+            setOnClickListener {
+                closeBiliSheet()
+                MusicPlayback.setMvSource(CastConfig.MV_SOURCE_BILI)
+            }
+        }
+        val close = TextView(this).apply {
+            text = "关闭"
+            textPx(13f)
+            typeface = Ui.font(600)
+            setTextColor(0x99EBEBF5.toInt())
+            includeFontPadding = false
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isClickable = true
+            setBackgroundDrawable(rounded(0x24FFFFFF, 0x33FFFFFF, 18f))
+            setOnFocusChangeListener { view, focused ->
+                val text = view as TextView
+                text.setTextColor(if (focused) Ui.ON_FOCUS else 0x99EBEBF5.toInt())
+                text.setBackgroundDrawable(if (focused) rounded(0xFFF5F5F7.toInt(), 0, 18f) else rounded(0x24FFFFFF, 0x33FFFFFF, 18f))
+            }
+            setOnClickListener { closeBiliSheet() }
+        }
+        actions.addView(research, LinearLayout.LayoutParams(0, Ui.pxi(38f), 1f).apply { rightMargin = Ui.pxi(8f) })
+        actions.addView(close, LinearLayout.LayoutParams(0, Ui.pxi(38f), 1f))
+        panel.addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(38f)).apply { topMargin = Ui.pxi(8f) })
+
+        overlay.addView(panel, FrameLayout.LayoutParams(Ui.pxi(430f), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        root.addView(overlay, frame(0f, 0f, 960f, 540f))
+        biliSheet = overlay
+        biliSheetAuto = auto
+        shownBiliToken = snapshot.biliToken
+        (rows.firstOrNull() ?: close).requestFocus()
+    }
+
+    private fun closeBiliSheet() {
+        val overlay = biliSheet ?: return
+        biliSheet = null
+        biliSheetAuto = false
+        biliSheetHint = null
+        root.removeView(overlay)
+        playButton.requestFocus()
+    }
+
+    private fun refreshBiliSheet(snapshot: MusicSnapshot) {
+        val hint = biliSheetHint ?: return
+        hint.text = biliHint(snapshot)
+    }
+
+    private fun biliHint(snapshot: MusicSnapshot): String {
+        val pick = snapshot.biliResults.getOrNull(snapshot.biliSelected)
+        return when {
+            snapshot.biliCountdown > 0 && pick != null ->
+                snapshot.biliCountdown.toString() + " 秒后播放：" + pick.title
+            snapshot.mvActive && pick != null -> "正在播放：" + pick.title
+            else -> "选择后立即播放 · 关键词：“" + snapshot.biliQuery + "”"
+        }
+    }
+
+    private fun biliRowLabel(index: Int, mv: BiliMv): String {
+        val minutes = mv.duration / 60
+        val seconds = mv.duration % 60
+        val length = String.format(Locale.US, "%d:%02d", minutes, seconds)
+        return (index + 1).toString() + ". " + mv.title + "\n" +
+            mv.author + " · " + length + " · " + playCount(mv.play)
+    }
+
+    private fun playCount(count: Int): String = when {
+        count >= 10_000 -> (count / 10_000).toString() + " 万播放"
+        count > 0 -> count.toString() + " 播放"
+        else -> "B站"
     }
 
     private fun qualityShort(key: String): String = when {
@@ -832,6 +1133,9 @@ class MusicActivity : Activity() {
         private const val ID_NEXT = 1003
         private const val ID_QUALITY = 1004
         private const val ID_BACK = 1005
+        private const val ID_MV = 1006
+        private const val ID_SOURCE = 1007
+        private const val ID_BILI_LIST = 1008
 
         /** Opens the jukebox from Home or from an agent command (a worker thread may call this). */
         fun start(context: Context) {

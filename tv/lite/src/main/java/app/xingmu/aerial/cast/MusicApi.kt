@@ -24,6 +24,19 @@ class MusicQuality(val key: String, val label: String, val available: Boolean)
 /** What /api/music/url returned: the backend relay first, the CDN's own URL as a fallback. */
 class PlayUrl(val stream: String, val direct: String, val quality: String)
 
+/** A QM MV's own metadata: the card and the saver use the cover, the phone page the name. */
+class MvInfo(val vid: String, val name: String, val cover: String, val duration: Int)
+
+/** One B站 search hit: bvid is what plays, the rest is what the picker shows. */
+class BiliMv(
+    val bvid: String,
+    val title: String,
+    val author: String,
+    val cover: String,
+    val duration: Int,
+    val play: Int,
+)
+
 /**
  * The jukebox's backend client. Everything goes through the TV's configured backend (OkHttp 3,
  * TLS 1.2 widened for 4.4) so the CDN's short-lived links never have to be composed here.
@@ -122,6 +135,9 @@ object MusicApi {
                             interval = item.optInt("interval", 0),
                             quality = DEFAULT_QUALITY,
                             url = "",
+                            vid = item.optString("vid").ifEmpty {
+                                item.optJSONObject("mv")?.optString("vid").orEmpty()
+                            },
                         )
                     )
                 }
@@ -187,6 +203,77 @@ object MusicApi {
             val stream = CastConfig.backendUrl + "/api/music/stream/" + Uri.encode(mid) +
                 "?quality=" + Uri.encode(used)
             callback(PlayUrl(stream, direct, used), null)
+        }
+    }
+
+    /** The song's own (QM) MV: the relay stream plus the CDN link, as the audio resolver does. */
+    fun mvUrl(vid: String, callback: (PlayUrl?, String?) -> Unit) {
+        http("/api/music/mv/" + Uri.encode(vid) + "/url") { json, error ->
+            if (json == null) {
+                callback(null, error)
+                return@http
+            }
+            val data = json.optJSONObject("data")
+            callback(PlayUrl(qmMvStream(vid), data?.optString("url").orEmpty(), "MV"), null)
+        }
+    }
+
+    /** The relay URL is composed here for the same reason as the audio one: no loopback host. */
+    fun qmMvStream(vid: String, quality: Int = 0): String {
+        val base = CastConfig.backendUrl + "/api/music/mv/" + Uri.encode(vid) + "/stream"
+        // quality 0 = the MV's own default (highest); 4.4 falls back to 30/10 via the backend.
+        return if (quality > 0) base + "?quality=" + quality else base
+    }
+
+    fun biliMvStream(bvid: String): String =
+        CastConfig.backendUrl + "/api/music/mv/bili/" + Uri.encode(bvid) + "/stream"
+
+    /** The QM MV's cover/name; the saver paints it as the background while the MV plays. */
+    fun mvInfo(vid: String, callback: (MvInfo?, String?) -> Unit) {
+        http("/api/music/mv/" + Uri.encode(vid)) { json, error ->
+            if (json == null) {
+                callback(null, error)
+                return@http
+            }
+            val data = json.optJSONObject("data") ?: return@http callback(null, "MV 信息为空")
+            val info = MvInfo(
+                vid = data.optString("vid").ifEmpty { vid },
+                name = data.optString("name"),
+                cover = data.optString("cover"),
+                duration = data.optInt("duration", 0),
+            )
+            callback(info, null)
+        }
+    }
+
+    /** B站 MV search by 歌名 + 歌手; each hit carries the bvid its stream is played by. */
+    fun biliSearch(keyword: String, callback: (List<BiliMv>, String?) -> Unit) {
+        val path = "/api/music/mv/bili/search?q=" + Uri.encode(keyword) + "&limit=8"
+        http(path) { json, error ->
+            if (json == null) {
+                callback(emptyList(), error)
+                return@http
+            }
+            val results = ArrayList<BiliMv>()
+            val list = json.optJSONObject("data")?.optJSONArray("list")
+            if (list != null) {
+                for (i in 0 until list.length()) {
+                    val item = list.optJSONObject(i) ?: continue
+                    val bvid = item.optString("bvid")
+                    if (bvid.isEmpty()) continue
+                    results.add(
+                        BiliMv(
+                            bvid = bvid,
+                            title = item.optString("title"),
+                            author = item.optString("author"),
+                            cover = item.optString("cover"),
+                            duration = item.optInt("duration", 0),
+                            play = item.optInt("play", 0),
+                        )
+                    )
+                }
+            }
+            callback(results, null)
         }
     }
 

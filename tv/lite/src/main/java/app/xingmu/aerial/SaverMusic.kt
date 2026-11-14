@@ -11,6 +11,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.View
+import app.xingmu.aerial.cast.CastConfig
 import app.xingmu.aerial.cast.LyricLine
 import app.xingmu.aerial.cast.MusicApi
 import app.xingmu.aerial.cast.MusicSnapshot
@@ -20,16 +21,22 @@ import app.xingmu.aerial.cast.MusicSong
  * What is playing, over the screensaver: a small translucent card with the cover, the song and a
  * few lyric lines. It has no actions and takes no focus — the screensaver must stay a picture, not
  * a remote control. SaverView feeds it the player's state; it only draws.
+ *
+ * In MV mode the card shows the MV's cover and a 「MV·QM」/「MV·B站」 badge instead of the lyric
+ * lines, and SaverView paints that cover behind everything.
  */
 class SaverMusic(context: Context) : View(context) {
     private var song: MusicSong? = null
     private var playing = false
     private var cover: Bitmap? = null
-    private var coverMid = ""
+    /** The URL the current [cover] came from: the MV's cover, else the song's album art. */
+    private var coverKey = ""
     private var lyrics: List<LyricLine> = emptyList()
     private var lyricMid = ""
     private var lyricIndex = -1
     private var position = 0L
+    private var mvActive = false
+    private var mvSource = CastConfig.MV_SOURCE_QM
 
     private val card = Paint(Paint.ANTI_ALIAS_FLAG)
     private val cardEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -70,6 +77,14 @@ class SaverMusic(context: Context) : View(context) {
     }
     private val cardRect = RectF()
     private val coverRect = RectF()
+    private val badgeRect = RectF()
+    private val badge = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val badgeText = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+        textSize = Ui.px(10.5f)
+        typeface = Ui.font(600)
+        textAlign = Paint.Align.CENTER
+        color = 0xFFFFFFFF.toInt()
+    }
 
     init {
         isFocusable = false
@@ -85,20 +100,27 @@ class SaverMusic(context: Context) : View(context) {
             song = null
             playing = false
             cover = null
-            coverMid = ""
+            coverKey = ""
             lyrics = emptyList()
             lyricMid = ""
             lyricIndex = -1
+            mvActive = false
             visibility = GONE
             return
         }
         song = now
         playing = snapshot.playing
+        mvActive = snapshot.mvActive
+        mvSource = snapshot.mvSource
         if (visibility != VISIBLE) visibility = VISIBLE
-        if (now.mid != lyricMid) {
-            coverMid = now.mid
+        // 屏保跟随 MV：MV 正在播放时用 MV 封面，没有则退回歌曲封面。
+        val target = if (mvActive && snapshot.mvCover.isNotEmpty()) snapshot.mvCover else now.cover
+        if (target != coverKey) {
+            coverKey = target
             cover = null
-            loadCover(now)
+            loadCover(target)
+        }
+        if (now.mid != lyricMid) {
             lyricMid = now.mid
             lyrics = emptyList()
             lyricIndex = -1
@@ -109,9 +131,9 @@ class SaverMusic(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun loadCover(song: MusicSong) {
-        MusicApi.cover(song.cover) { bitmap, _ ->
-            if (song.mid == coverMid && bitmap != null) {
+    private fun loadCover(url: String) {
+        MusicApi.cover(url) { bitmap, _ ->
+            if (url == coverKey && bitmap != null) {
                 cover = bitmap
                 invalidate()
             }
@@ -167,10 +189,21 @@ class SaverMusic(context: Context) : View(context) {
         }
 
         val textLeft = left + size + Ui.px(12f)
-        val maxText = w - textLeft - Ui.px(12f)
+        // The badge takes the corner the playing dot uses, so the MV state reads at a glance.
+        val maxText = if (mvActive) w - textLeft - Ui.px(92f) else w - textLeft - Ui.px(12f)
         canvas.drawText(fit(song.name, title, maxText), textLeft, Ui.px(31f), title)
         val who = if (song.singer.isEmpty()) "未知歌手" else song.singer
         canvas.drawText(fit(who, singer, maxText), textLeft, Ui.px(50f), singer)
+
+        if (mvActive) {
+            badgeRect.set(w - Ui.px(88f), Ui.px(12f), w - Ui.px(12f), Ui.px(34f))
+            badge.color = if (mvSource == CastConfig.MV_SOURCE_BILI) 0xCCB23BEA.toInt() else 0xCC5B4BF5.toInt()
+            canvas.drawRoundRect(badgeRect, Ui.px(11f), Ui.px(11f), badge)
+            val label = if (mvSource == CastConfig.MV_SOURCE_BILI) "MV·B站" else "MV·QM"
+            canvas.drawText(label, badgeRect.centerX(), badgeRect.centerY() + Ui.px(4f), badgeText)
+            // MV mode: no lyric rows on the saver, only cover + song + badge.
+            return
+        }
 
         if (playing) {
             card.color = 0xCC6EE7A0.toInt()

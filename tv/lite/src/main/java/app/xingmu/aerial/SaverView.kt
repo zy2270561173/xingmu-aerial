@@ -20,7 +20,9 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.VideoView
 import app.xingmu.aerial.Ui.textPx
+import app.xingmu.aerial.cast.MusicApi
 import app.xingmu.aerial.cast.MusicPlayback
+import app.xingmu.aerial.cast.MusicSnapshot
 import kotlin.random.Random
 
 /**
@@ -55,9 +57,24 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     private var clock: ClockView? = null
     /** A quiet now-playing card with lyric lines; it only draws, it takes no key. */
     private val music = SaverMusic(context)
+    /**
+     * MV 跟随：MV 正在播放时，屏保用 MV 封面当背景（和 Bing 壁纸一样整屏绘制），而不是纯黑；
+     * 电影/照片/壁纸让位给这张图，卡片与时钟仍在上层。
+     */
+    private val mvBackdrop = ImageView(context).apply {
+        scaleType = ImageView.ScaleType.FIT_XY
+        alpha = 0.72f
+        visibility = GONE
+    }
+    private var mvActive = false
+    private var mvCoverUrl = ""
+    /** The clock mode's wallpaper view, hidden while the MV background owns the screen. */
+    private var wallpaperView: ImageView? = null
     private val musicTick = object : Runnable {
         override fun run() {
-            music.update(MusicPlayback.snapshot(), MusicPlayback.positionMs())
+            val snapshot = MusicPlayback.snapshot()
+            music.update(snapshot, MusicPlayback.positionMs())
+            applyMv(snapshot)
             handler.postDelayed(this, 500L)
         }
     }
@@ -88,6 +105,9 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     init {
         setBackgroundColor(0xFF000000.toInt())
         keepScreenOn = true
+        // The MV cover sits at the very bottom: every other layer (film, photo, clock, card) is
+        // added above it, so hiding those layers reveals the cover instead of black.
+        addView(mvBackdrop, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         time.setShadowLayer(Ui.px(4f), 0f, 0f, 0x66000000)
         caption.apply {
             setTextColor(0xEBFFFFFF.toInt())
@@ -130,17 +150,58 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         }
     }
 
+    /**
+     * MV 跟随：MV 播放时把 MV 封面当整屏背景，电影/照片/壁纸暂时让位（不停止音频），
+     * 卡片和时钟留在上层；MV 结束或切回音频时恢复原来的画面。
+     */
+    private fun applyMv(snapshot: MusicSnapshot) {
+        val active = snapshot.mvActive
+        if (active != mvActive) {
+            mvActive = active
+            if (active) {
+                mvBackdrop.visibility = VISIBLE
+                // A film under the cover would burn a second decoder with nothing to show.
+                runCatching { video?.pause() }
+                video?.visibility = GONE
+            } else {
+                mvBackdrop.visibility = GONE
+                mvBackdrop.setImageBitmap(null)
+                mvCoverUrl = ""
+                if (video != null) {
+                    video?.visibility = VISIBLE
+                    runCatching { video?.start() }
+                }
+            }
+            for (frame in frames) frame?.visibility = if (active) GONE else VISIBLE
+            wallpaperView?.visibility = if (active) GONE else VISIBLE
+        }
+        if (!active) return
+        // No MV info yet (or a MV without a cover): the song's own cover keeps the screen alive.
+        val url = snapshot.mvCover.ifEmpty { snapshot.song?.cover.orEmpty() }
+        if (url.isEmpty() || url == mvCoverUrl) return
+        mvCoverUrl = url
+        // Through the backend's cover relay: 4.4's OkHttp cannot reach the CDN's TLS directly.
+        MusicApi.cover(url) { bitmap, _ ->
+            if (mvActive && mvCoverUrl == url && bitmap != null) mvBackdrop.setImageBitmap(bitmap)
+        }
+    }
+
     private fun showClock() {
         clockOnly = true
         video?.let { it.stopPlayback(); removeView(it) }
         video = null
         removeView(shade); removeView(caption); removeView(time)
         // The wallpaper's light under the clock, at 75% over black.
-        if (wallpaper != null) addView(ImageView(context).apply {
-            setImageBitmap(wallpaper)
-            scaleType = ImageView.ScaleType.FIT_XY
-            alpha = 0.75f
-        }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        if (wallpaper != null) {
+            val view = ImageView(context).apply {
+                setImageBitmap(wallpaper)
+                scaleType = ImageView.ScaleType.FIT_XY
+                alpha = 0.75f
+                visibility = if (mvActive) GONE else VISIBLE
+            }
+            wallpaperView = view
+            addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        }
         val c = ClockView(context).apply { large = true; refresh(); weather = Weather.line(context) }
         clock = c
         addView(c, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
@@ -296,6 +357,7 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     fun release() {
         handler.removeCallbacksAndMessages(null)
         video?.stopPlayback()
+        mvBackdrop.setImageBitmap(null)
         loader.shutdownNow()
         kenBurns?.cancel()
         for (f in frames) f?.animate()?.cancel()
