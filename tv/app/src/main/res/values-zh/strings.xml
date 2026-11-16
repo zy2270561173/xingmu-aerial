@@ -143,6 +143,8 @@
     <string name="st_names_all">全部显示</string>
     <string name="st_names_hint">每个 App 下面都显示名称，或者像 Apple TV 一样只显示选中的。全部显示时，第一排的名称也显示在玻璃底板里。</string>
     <string name="ss_kind">类型</string>
+    <string name="ss_mode">屏保</string>
+    <string name="ss_mode_hint">选 MV 时，正在播放 MV 音乐就用 MV 当屏保，否则自动退回壁纸。</string>
     <string name="wp_weather_city">位置</string>
     <string name="st_home_standard">双排</string>
     <string name="st_home_one_row">单排</string>

@@ -136,6 +136,8 @@
     <string name="st_names_all">Барлық қолданбалар</string>
     <string name="st_names_hint">Атаулар әр қолданбаның астында немесе тек таңдалғанның астында, Apple TV сияқты.</string>
     <string name="ss_kind">Түрі</string>
+    <string name="ss_mode">Экран қорғаушы</string>
+    <string name="ss_mode_hint">«MV» таңдалғанда, клип ойнап жатса, экран қорғаушы сол клипті көрсетеді; әйтпесе түсқағаз қалады.</string>
     <string name="wp_weather_city">Орналасқан жер</string>
     <string name="st_home_standard">Екі қатар</string>
     <string name="st_home_one_row">Бір қатар</string>

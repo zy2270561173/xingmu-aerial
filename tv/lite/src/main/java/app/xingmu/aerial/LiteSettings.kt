@@ -43,6 +43,19 @@ enum class Effects(val key: String) {
 }
 
 /**
+ * 屏保画面: the wallpaper the saver has always shown ([Wallpaper]), or the music video while one
+ * plays ([Mv]). MV falls back to the wallpaper whenever no MV is playing, so the choice can never
+ * leave a black screen behind.
+ */
+enum class SaverMode(val key: String) {
+    Wallpaper("wallpaper"), Mv("mv");
+
+    companion object {
+        fun of(key: String?) = values().firstOrNull { it.key == key } ?: Wallpaper
+    }
+}
+
+/**
  * Lite's preferences, under the full app's names and defaults (settings/AerialSettings.kt), so the
  * two read alike and the phone page's settings mean the same. Main thread only.
  */
@@ -78,6 +91,7 @@ object LiteSettings {
     var uiSounds = UiSounds.Tv; private set
     var effects = Effects.Auto; private set
     var screensaverMinutes = 5; private set
+    var saverMode = SaverMode.Wallpaper; private set
     var bootApp: String? = null; private set
 
     const val NEVER = 0
@@ -114,6 +128,7 @@ object LiteSettings {
         ) UiSounds.Tv else UiSounds.Aerial
         effects = Effects.of(prefs.getString("effects", null))
         screensaverMinutes = prefs.getInt("screensaver_minutes", 5)
+        saverMode = SaverMode.of(prefs.getString("saver_mode", null))
         bootApp = prefs.getString("boot_app", null)
         pinHash = prefs.getString("pin_hash", null)
         pinSet = pinHash != null
@@ -139,6 +154,7 @@ object LiteSettings {
     fun chooseUiSounds(v: UiSounds) { uiSounds = v; put { putString("ui_sounds_kind", v.key) } }
     fun chooseEffects(v: Effects) { effects = v; put { putString("effects", v.key) } }
     fun chooseScreensaverMinutes(v: Int) { screensaverMinutes = v; put { putInt("screensaver_minutes", v) } }
+    fun chooseSaverMode(v: SaverMode) { saverMode = v; put { putString("saver_mode", v.key) } }
     fun chooseBootApp(pkg: String?) { bootApp = pkg; put { putString("boot_app", pkg) } }
 
     /** Animations and the focused tile's shadow: with hardware acceleration, unless Effects says Lite. */

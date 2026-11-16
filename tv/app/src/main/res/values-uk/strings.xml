@@ -136,6 +136,8 @@
     <string name="st_names_all">Усі застосунки</string>
     <string name="st_names_hint">Назви під кожним застосунком або лише під вибраним, як на Apple TV.</string>
     <string name="ss_kind">Вигляд</string>
+    <string name="ss_mode">Заставка</string>
+    <string name="ss_mode_hint">З «MV» заставка стає кліпом, коли він грає; без кліпа лишаються шпалери.</string>
     <string name="wp_weather_city">Місцезнаходження</string>
     <string name="st_home_standard">Два ряди</string>
     <string name="st_home_one_row">Один ряд</string>

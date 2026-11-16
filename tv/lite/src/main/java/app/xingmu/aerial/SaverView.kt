@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Shader
 import android.media.MediaPlayer
@@ -14,6 +15,8 @@ import android.os.Looper
 import android.text.TextUtils
 import android.util.Log
 import android.view.Gravity
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -41,6 +44,11 @@ import kotlin.random.Random
  * My videos: the films sent from the phone page, one after another, from the TV's own storage.
  *
  * Clock: the large clock (date, time, weather) over the wallpaper at 75%, somewhere new each minute.
+ *
+ * MV (Personalize → 屏保 → MV): the jukebox's music video itself, full screen and hardware decoded
+ * as in the page, with a big half-transparent clock in one corner and the now-playing card in the
+ * other; the middle of the picture is left alone. No MV playing (or 屏保 → 壁纸) and the saver is
+ * the wallpaper clock it has always been.
  *
  * The time shows over the films and photos when Personalize says so.
  */
@@ -70,6 +78,57 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     private var mvCoverUrl = ""
     /** The clock mode's wallpaper view, hidden while the MV background owns the screen. */
     private var wallpaperView: ImageView? = null
+
+    // ---- MV mode (Personalize → 屏保 → MV) ----
+
+    /** Personalize chose MV: a playing music video fills the saver, everything else is the wallpaper. */
+    private val mvSaver = LiteSettings.saverMode == SaverMode.Mv
+    /** The MV layer is what the saver is showing right now. */
+    private var mvLive = false
+    private var mvVideoW = 0
+    private var mvVideoH = 0
+    /**
+     * The screensaver's video target, full screen under the clock and the card. ijk's MediaCodec
+     * wants its output surface at configure time on these boxes, so the view exists from the start
+     * and only its visibility changes; MusicPlayback rebuilds the decoder behind it (see setSurface).
+     */
+    private val mvView = TextureView(context).apply {
+        visibility = GONE
+        isClickable = false
+        isFocusable = false
+        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                mvSurface = Surface(texture)
+                if (mvLive) mvSurface?.let { MusicPlayback.setSurface(it, MusicPlayback.SURFACE_SAVER) }
+            }
+
+            override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                applyMvFill()
+            }
+
+            override fun onSurfaceTextureDestroyed(texture: android.graphics.SurfaceTexture): Boolean {
+                mvSurface = null
+                MusicPlayback.setSurface(null, MusicPlayback.SURFACE_SAVER)
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(texture: android.graphics.SurfaceTexture) = Unit
+        }
+    }
+    /**
+     * One Surface for the view's SurfaceTexture: MusicPlayback rebuilds the decoder when it is
+     * handed a different Surface, and a second wrapper of the same texture would look like one.
+     */
+    private var mvSurface: Surface? = null
+    /** The big clock over the video: one corner, half transparent, out of the picture's middle. */
+    private val mvClock = ClockView(context).apply {
+        large = true
+        alpha = 0.7f
+        refresh()
+        weather = Weather.line(context)
+        visibility = GONE
+    }
+
     private val musicTick = object : Runnable {
         override fun run() {
             val snapshot = MusicPlayback.snapshot()
@@ -95,6 +154,10 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         override fun run() {
             time.text = timeText(context)
             clock?.let { it.refresh(); it.weather = Weather.line(context); moveClock() }
+            if (mvClock.visibility == VISIBLE) {
+                mvClock.refresh()
+                mvClock.weather = Weather.line(context)
+            }
             val now = System.currentTimeMillis()
             // Every two minutes the words wander a little.
             if (!clockOnly && (now / 60_000) % 2 == 0L) drift()
@@ -108,6 +171,8 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         // The MV cover sits at the very bottom: every other layer (film, photo, clock, card) is
         // added above it, so hiding those layers reveals the cover instead of black.
         addView(mvBackdrop, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // The MV itself, just above that cover: the clock and the card go on top of it.
+        addView(mvView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         time.setShadowLayer(Ui.px(4f), 0f, 0f, 0x66000000)
         caption.apply {
             setTextColor(0xEBFFFFFF.toInt())
@@ -127,6 +192,8 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
             else -> Unit
         }
         if (!clockOnly && !photos && films.isEmpty()) clockOnly = true
+        // 屏保 → MV is the wallpaper clock when no MV plays: the video only takes over on top of it.
+        if (mvSaver) clockOnly = true
         when {
             clockOnly -> showClock()
             photos -> showPhotos()
@@ -138,23 +205,125 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     }
 
     /** Puts the read-only now-playing card above whatever the screensaver is showing. */
-    private fun installMusic() {
+    private fun installMusic(compact: Boolean = false) {
+        // MV mode keeps the card small (`compact`): a third of the screen wide, in a corner, so the
+        // picture's middle is left to the video.
+        val params = LayoutParams(
+            Ui.pxi(if (compact) 320f else 410f),
+            Ui.pxi(if (compact) 132f else 140f),
+            Gravity.TOP or Gravity.END,
+        ).apply {
+            topMargin = Ui.pxi(if (compact) 40f else 44f)
+            rightMargin = Ui.pxi(if (compact) 48f else 56f)
+        }
         if (music.parent == null) {
             music.alpha = 0.94f
-            addView(music, LayoutParams(Ui.pxi(410f), Ui.pxi(140f), Gravity.TOP or Gravity.END).apply {
-                topMargin = Ui.pxi(44f)
-                rightMargin = Ui.pxi(56f)
-            })
+            addView(music, params)
         } else {
+            music.layoutParams = params
             music.bringToFront()
         }
     }
 
     /**
+     * MV mode: the video takes the screen while a MV is really playing, and the wallpaper clock
+     * comes back the moment it stops, is paused, or the song turns out to be audio only.
+     */
+    private fun syncMvSaver(snapshot: MusicSnapshot) {
+        if (snapshot.mvVideoWidth != mvVideoW || snapshot.mvVideoHeight != mvVideoH) {
+            mvVideoW = snapshot.mvVideoWidth
+            mvVideoH = snapshot.mvVideoHeight
+            if (mvLive) applyMvFill()
+        }
+        // The TextureView only paints on a hardware accelerated window; without one the saver
+        // stays the wallpaper instead of turning black.
+        val want = snapshot.mvActive && snapshot.playing && snapshot.song != null &&
+            (parent == null || isHardwareAccelerated)
+        if (want == mvLive) {
+            // Nobody holds the picture any more though the MV never stopped: the jukebox page was
+            // opened over the saver (a song pushed from the phone) and closed again. Take it back,
+            // or the saver would sit on one frozen frame.
+            if (mvLive && MusicPlayback.attachedSurfaceOwner().isEmpty()) attachMvSurface()
+            return
+        }
+        mvLive = want
+        if (want) {
+            Log.i("AerialLite", "saver mv on: " + snapshot.mvTitle.ifEmpty { snapshot.song?.name.orEmpty() } +
+                " " + snapshot.mvVideoWidth + "x" + snapshot.mvVideoHeight)
+            enterMv()
+        } else {
+            Log.i("AerialLite", "saver mv off: back to the wallpaper")
+            leaveMv()
+        }
+    }
+
+    /** The video over the wallpaper: the film, the pictures and the wallpaper clock step aside. */
+    private fun enterMv() {
+        video?.let { runCatching { it.pause() }; it.visibility = GONE }
+        for (frame in frames) frame?.visibility = GONE
+        wallpaperView?.visibility = GONE
+        clock?.visibility = GONE
+        mvBackdrop.visibility = GONE
+        mvClock.visibility = VISIBLE
+        mvView.visibility = VISIBLE
+        installMusic(compact = true)
+        mvView.post { applyMvFill() }
+        attachMvSurface()
+    }
+
+    /** No MV any more: the wallpaper clock, the card and (in the other modes) the film come back. */
+    private fun leaveMv() {
+        MusicPlayback.setSurface(null, MusicPlayback.SURFACE_SAVER)
+        mvView.visibility = GONE
+        mvClock.visibility = GONE
+        video?.visibility = VISIBLE
+        for (frame in frames) frame?.visibility = VISIBLE
+        wallpaperView?.visibility = VISIBLE
+        clock?.visibility = VISIBLE
+        installMusic(compact = false)
+    }
+
+    /**
+     * Hands the MV the screensaver's surface. The TextureView's texture appears a moment after it
+     * is shown, so this waits for it instead of giving up on the first try.
+     */
+    private fun attachMvSurface(retries: Int = 5) {
+        if (!mvLive) return
+        val surface = mvSurface ?: runCatching { mvView.surfaceTexture }.getOrNull()?.let { texture ->
+            Surface(texture).also { mvSurface = it }
+        }
+        if (surface != null) {
+            MusicPlayback.setSurface(surface, MusicPlayback.SURFACE_SAVER)
+            return
+        }
+        if (retries > 0) handler.postDelayed({ attachMvSurface(retries - 1) }, 200L)
+    }
+
+    /** Fills the screen at the picture's own aspect ratio, cropping the overflow, as the page does. */
+    private fun applyMvFill() {
+        val width = mvView.width
+        val height = mvView.height
+        if (width <= 0 || height <= 0) return
+        val srcWidth = if (mvVideoW > 0) mvVideoW else 16
+        val srcHeight = if (mvVideoH > 0) mvVideoH else 9
+        val fill = maxOf(width.toFloat() / srcWidth, height.toFloat() / srcHeight)
+        val matrix = Matrix()
+        matrix.setScale(fill * srcWidth / width, fill * srcHeight / height, width / 2f, height / 2f)
+        runCatching { mvView.setTransform(matrix) }
+    }
+
+    /**
      * MV 跟随：MV 播放时把 MV 封面当整屏背景，电影/照片/壁纸暂时让位（不停止音频），
      * 卡片和时钟留在上层；MV 结束或切回音频时恢复原来的画面。
+     *
+     * With 屏保 → MV chosen this is the video itself instead of its cover ([syncMvSaver]);
+     * the cover is only a backdrop for the default 壁纸 choice.
      */
     private fun applyMv(snapshot: MusicSnapshot) {
+        if (mvSaver) {
+            syncMvSaver(snapshot)
+            return
+        }
         val active = snapshot.mvActive
         if (active != mvActive) {
             mvActive = active
@@ -206,7 +375,25 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         clock = c
         addView(c, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
         moveClock()
+        if (mvSaver) showMvClock()
         installMusic()
+    }
+
+    /**
+     * The MV mode's clock: the same large clock, half transparent, pinned to the bottom left corner
+     * (the card takes the top right) and scaled down so the middle of the picture stays clear. The
+     * pivot is its own bottom left corner, so it scales into the corner instead of towards the middle.
+     */
+    private fun showMvClock() {
+        if (mvClock.parent != null) return
+        addView(mvClock, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
+            leftMargin = Ui.pxi(48f)
+            bottomMargin = Ui.pxi(36f)
+        })
+        mvClock.pivotX = 0f
+        mvClock.pivotY = Ui.px(200f)
+        mvClock.scaleX = 0.62f
+        mvClock.scaleY = 0.62f
     }
 
     /** The full app's ClockSaver: anywhere in the screen less a margin and the clock's own size; faded across on a GPU. */
@@ -355,6 +542,13 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
 
 
     fun release() {
+        // The MV's surface goes with the saver: the jukebox page (or the next saver) takes it back
+        // and MusicPlayback rebuilds the decoder behind the new one.
+        if (mvLive) {
+            mvLive = false
+            Log.i("AerialLite", "saver mv off: saver closing")
+        }
+        MusicPlayback.setSurface(null, MusicPlayback.SURFACE_SAVER)
         handler.removeCallbacksAndMessages(null)
         video?.stopPlayback()
         mvBackdrop.setImageBitmap(null)

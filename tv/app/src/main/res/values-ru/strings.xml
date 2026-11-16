@@ -136,6 +136,8 @@
     <string name="st_names_all">Все приложения</string>
     <string name="st_names_hint">Названия под каждым приложением или только под выбранным, как на Apple TV.</string>
     <string name="ss_kind">Вид</string>
+    <string name="ss_mode">Заставка</string>
+    <string name="ss_mode_hint">С «MV» заставкой становится клип, когда он играет; без клипа остаются обои.</string>
     <string name="wp_weather_city">Местоположение</string>
     <string name="st_home_standard">Два ряда</string>
     <string name="st_home_one_row">Один ряд</string>

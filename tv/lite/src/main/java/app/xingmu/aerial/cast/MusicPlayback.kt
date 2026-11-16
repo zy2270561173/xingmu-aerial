@@ -70,6 +70,10 @@ object MusicPlayback {
     private const val MV_STALL_MS = 12_000L
     /** How long a MV's advance is measured against real time to notice a starved stream. */
     private const val MV_SAMPLE_MS = 10_000L
+    /** The jukebox page's TextureView wants the picture. */
+    const val SURFACE_PAGE = "page"
+    /** The screensaver's TextureView wants it: the MV mode saver plays the video full screen. */
+    const val SURFACE_SAVER = "saver"
     /**
      * bilibili's CDN answers 403 to a bare request: the pair below is what the backend relay sends,
      * and without it the direct link cannot be played at all (measured 2026-11-16).
@@ -95,8 +99,16 @@ object MusicPlayback {
     private var audioFocus: AudioManager.OnAudioFocusChangeListener? = null
 
     // ---- MV state ----
-    /** The page's video target; null while the page is closed or between two surfaces. */
+    /** The video target: the jukebox page's TextureView or the screensaver's; null when nobody wants it. */
     @Volatile private var surface: Surface? = null
+    /** Which of the two asked for [surface]; empty when it is not attached. */
+    @Volatile private var surfaceOwner = ""
+    /**
+     * The Surface the running decoder was built for. ijk can be pointed at another one, but on
+     * these boxes that is where a green picture comes from (a hardware decoder keeps writing into
+     * the buffers it was configured with), so a different surface means a new decoder.
+     */
+    @Volatile private var decoderSurface: Surface? = null
     @Volatile private var mvActive = false
     @Volatile private var mvCover = ""
     @Volatile private var mvTitle = ""
@@ -209,19 +221,47 @@ object MusicPlayback {
     }
 
     /**
-     * The page's TextureView surface. The MV player draws into it; detaching it (Back, or the
-     * screensaver covering the page) must not pause playback, so the surface is only remembered.
+     * Where the MV should draw: the page's TextureView ([SURFACE_PAGE]) or the screensaver's
+     * ([SURFACE_SAVER]). Detaching it (Back, or the screensaver covering the page) must not pause
+     * playback, so the surface is only remembered.
+     *
+     * A *new* surface behind a running MV rebuilds the decoder and picks the picture up at the
+     * position it was at. Handing the running decoder a second surface works on some boxes and
+     * shows green on this one (Home → 点歌台 again, measured 2026-11-16); a decoder built for the
+     * surface it draws into is the reliable way, and the seek keeps the song continuous.
      */
-    fun setSurface(value: Surface?) {
-        surface = value
+    fun setSurface(value: Surface?, owner: String = SURFACE_PAGE) {
         main.post {
-            val media = player ?: return@post
-            if (mvActive) runCatching { media.setSurface(value) }
+            if (value == null) {
+                // Only its owner may take the picture away: a page closing must not drop the
+                // screensaver's surface, nor the screensaver the page's.
+                if (surfaceOwner.isNotEmpty() && surfaceOwner != owner) return@post
+                if (surface != null) Log.i(TAG, "mv surface detached by " + owner)
+                surface = null
+                surfaceOwner = ""
+                return@post
+            }
+            val previous = surface
+            surface = value
+            surfaceOwner = owner
+            val media = player
+            // Audio, or nothing decoding: the surface is only remembered for the next MV.
+            if (!mvActive || media == null) return@post
+            if (previous === value && decoderSurface === value) return@post
+            if (mvSources.isEmpty()) return@post
+            val song = MusicQueue.current() ?: return@post
+            val at = runCatching { media.currentPosition }.getOrDefault(position).coerceAtLeast(0L)
+            Log.i(TAG, "mv surface attached by " + owner + ": rebuilding the decoder at " + at + "ms")
+            position = at
+            playMvSource(song, at, paused = !playing)
         }
     }
 
     fun mvEnabled(): Boolean = CastConfig.mvEnabled
     fun mvSource(): String = CastConfig.mvSource
+
+    /** Which surface is attached ([SURFACE_PAGE], [SURFACE_SAVER]) or empty when there is none. */
+    fun attachedSurfaceOwner(): String = surfaceOwner
 
     /** MV on restarts the song with video from the top; MV off returns to audio at the same place. */
     fun setMvEnabled(enabled: Boolean) {
@@ -553,7 +593,7 @@ object MusicPlayback {
         return list
     }
 
-    private fun playMvSource(song: MusicSong, startMs: Long) {
+    private fun playMvSource(song: MusicSong, startMs: Long, paused: Boolean = false) {
         val source = mvSources.getOrNull(mvSourceIndex) ?: return
         val where = if (CastConfig.mvSource == CastConfig.MV_SOURCE_BILI) {
             "bili"
@@ -562,7 +602,10 @@ object MusicPlayback {
         }
         val way = if (source.first == "direct") "the CDN link (direct)" else "the relay"
         Log.i(TAG, "mv playing " + way + " " + where + " vid=" + song.vid)
-        startPlayer(song, source.second, startMs, video = true, directUrl = "", headers = mvHeaders)
+        startPlayer(
+            song, source.second, startMs, video = true, directUrl = "", headers = mvHeaders,
+            paused = paused,
+        )
     }
 
     /**
@@ -708,8 +751,16 @@ object MusicPlayback {
         video: Boolean,
         directUrl: String,
         headers: Map<String, String>? = null,
+        paused: Boolean = false,
     ) {
+        // A MV being rebuilt for a new surface keeps its state: the page must not fall back to the
+        // record player, and the saver must not leave MV mode, for the second the decoder takes to
+        // come back. Its position is carried over by the caller (setSurface).
+        val keepMv = mvActive && video
+        val keepPlaying = playing && keepMv
         releasePlayer()
+        mvActive = keepMv
+        playing = keepPlaying
         val generation = playerGeneration
         status = if (video) "正在缓冲 MV…" else "正在缓冲…"
         notifyState()
@@ -750,7 +801,14 @@ object MusicPlayback {
                 // 首帧快一点：默认 5 MB 的探测量在这条流上要读出好几秒，1 MB 足够识别 moov。
                 media.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "probesize", 1L shl 20)
                 media.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 500_000)
-                surface?.let { target -> runCatching { media.setSurface(target) } }
+                val target = surface
+                decoderSurface = target
+                target?.let { runCatching { media.setSurface(it) } }
+                Log.i(
+                    TAG,
+                    "mv decoder dec=" + (if (hardware) "hw" else "sw") +
+                        " surface=" + (if (target != null) surfaceOwner.ifEmpty { SURFACE_PAGE } else "none"),
+                )
                 media.setOnVideoSizeChangedListener { _, width, height, _, _ ->
                     if (width > 0 && height > 0 && (width != mvVideoWidth || height != mvVideoHeight)) {
                         mvVideoWidth = width
@@ -769,9 +827,15 @@ object MusicPlayback {
                     duration = runCatching { it.duration }.getOrDefault(0L).coerceAtLeast(0L)
                     if (startMs > 0) runCatching { it.seekTo(startMs) }
                     position = startMs
-                    it.start()
-                    playing = true
-                    requestFocus()
+                    if (paused) {
+                        // A rebuild of a MV that was paused: the picture comes back, the sound does not.
+                        runCatching { it.pause() }
+                        playing = false
+                    } else {
+                        it.start()
+                        playing = true
+                        requestFocus()
+                    }
                     status = ""
                     progressPosition = -1L
                     progressAt = 0L
@@ -940,6 +1004,7 @@ object MusicPlayback {
         cancelCountdown()
         val media = player
         player = null
+        decoderSurface = null
         prepared = false
         playing = false
         mvActive = false

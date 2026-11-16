@@ -996,6 +996,11 @@ class Personalize(
         col.add(section(R.string.wp_screensaver), top = 22f)
         val mode = Wallpapers.screensaver
         group {
+            // 屏保画面: the wallpaper it has always been, or the MV itself while one is playing
+            // (SaverView falls back to the wallpaper whenever no MV plays).
+            choices(R.string.ss_mode, string(R.string.ss_mode_hint),
+                listOf(SaverMode.Wallpaper to R.string.wp_wallpaper, SaverMode.Mv to "MV"),
+                LiteSettings.saverMode) { LiteSettings.chooseSaverMode(it) }
             val kinds = listOf(
                 ScreensaverMode.Aerial to R.string.ss_aerial,
                 ScreensaverMode.Photos to R.string.ss_photos,
