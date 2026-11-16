@@ -206,15 +206,21 @@ object MusicApi {
         }
     }
 
-    /** The song's own (QM) MV: the relay stream plus the CDN link, as the audio resolver does. */
-    fun mvUrl(vid: String, callback: (PlayUrl?, String?) -> Unit) {
-        http("/api/music/mv/" + Uri.encode(vid) + "/url") { json, error ->
+    /**
+     * The song's own (QM) MV: the relay stream plus the CDN link, as the audio resolver does.
+     * [quality] is the QM rendition (0 = the MV's default, 30 = 720p, 10 = 360p).
+     */
+    fun mvUrl(vid: String, quality: Int = 0, callback: (PlayUrl?, String?) -> Unit) {
+        // The CDN link in the answer names one rendition: without the query it is the 1080p one.
+        val path = "/api/music/mv/" + Uri.encode(vid) + "/url" +
+            if (quality > 0) "?quality=" + quality else ""
+        http(path) { json, error ->
             if (json == null) {
                 callback(null, error)
                 return@http
             }
             val data = json.optJSONObject("data")
-            callback(PlayUrl(qmMvStream(vid), data?.optString("url").orEmpty(), "MV"), null)
+            callback(PlayUrl(qmMvStream(vid, quality), data?.optString("url").orEmpty(), "MV"), null)
         }
     }
 
@@ -227,6 +233,21 @@ object MusicApi {
 
     fun biliMvStream(bvid: String): String =
         CastConfig.backendUrl + "/api/music/mv/bili/" + Uri.encode(bvid) + "/stream"
+
+    /**
+     * B站 MV: the CDN link (bilibili's CDN wants a Referer/User-Agent pair, see MusicPlayback) plus
+     * the relay, mirroring the QM resolver.
+     */
+    fun biliMvUrl(bvid: String, callback: (PlayUrl?, String?) -> Unit) {
+        http("/api/music/mv/bili/" + Uri.encode(bvid) + "/url") { json, error ->
+            if (json == null) {
+                callback(null, error)
+                return@http
+            }
+            val data = json.optJSONObject("data")
+            callback(PlayUrl(biliMvStream(bvid), data?.optString("url").orEmpty(), "MV"), null)
+        }
+    }
 
     /** The QM MV's cover/name; the saver paints it as the background while the MV plays. */
     fun mvInfo(vid: String, callback: (MvInfo?, String?) -> Unit) {

@@ -22,6 +22,7 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
@@ -56,7 +57,15 @@ class MusicActivity : Activity() {
     private lateinit var mvView: TextureView
     private lateinit var mvBadge: TextView
     private lateinit var mvTitleView: TextView
-    private lateinit var biliListButton: PillButton
+    private lateinit var controlsRow: LinearLayout
+    private lateinit var mvTopScrim: View
+    private lateinit var mvBottomScrim: View
+    private lateinit var mvBiliButton: PillButton
+    private lateinit var qrFrame: FrameLayout
+    private lateinit var queueTitle: TextView
+    private lateinit var hintView: TextView
+    /** The bottom bar's buttons, in D-pad order, for the focus check while a MV is full-screen. */
+    private var barButtons: List<PillButton> = emptyList()
     private lateinit var titleView: TextView
     private lateinit var singerView: TextView
     private lateinit var albumView: TextView
@@ -74,6 +83,19 @@ class MusicActivity : Activity() {
     private lateinit var qrView: ImageView
     private lateinit var qrLabel: TextView
     private lateinit var backdrop: BackdropView
+
+    /** A MV owns the screen: the picture is full-screen and the controls fade out. */
+    private var mvMode = false
+    /** The bottom controls are on screen right now. */
+    private var controlsVisible = false
+    /** The video's own pixel size, for the fill-the-screen crop; 0 until the decoder reports it. */
+    private var videoWidth = 0
+    private var videoHeight = 0
+    private var lastTimeLabel = ""
+    private var lastStatusLine = ""
+
+    /** The MV bar's idle timer: a visible bar tucks itself away again after a few quiet seconds. */
+    private val hideControlsTask = Runnable { hideMvControls() }
 
     @Volatile private var playing = false
     @Volatile private var currentMid = ""
@@ -99,17 +121,29 @@ class MusicActivity : Activity() {
 
     private val ticker = object : Runnable {
         override fun run() {
-            if (playing) disc.rotateBy(0.8f)
+            // The record only spins in audio mode: behind a full-screen MV it is not on screen.
+            if (playing && !mvMode) disc.rotateBy(0.8f)
             val position = MusicPlayback.positionMs()
             syncLyric(position)
             // The signed URL arrives right after auth; refresh the QR once it lands.
             val now = System.currentTimeMillis()
-            if (now - qrCheckAt >= 2000L) {
+            if (now - qrCheckAt >= 2000L && !mvMode) {
                 qrCheckAt = now
                 updateQr()
             }
             val duration = MusicPlayback.durationMs()
-            timeView.text = format(position) + " / " + format(if (duration > 0) duration else fallbackDuration)
+            val label = format(position) + " / " + format(if (duration > 0) duration else fallbackDuration)
+            // Ten ticks a second must not relayout a TextView whose text did not change.
+            if (label != lastTimeLabel) {
+                lastTimeLabel = label
+                timeView.text = label
+            }
+            // The status line carries a notice with a deadline; poll it so it really goes away.
+            val line = MusicPlayback.statusLine()
+            if (line != lastStatusLine) {
+                lastStatusLine = line
+                statusView.text = line
+            }
             handler.postDelayed(this, 100L)
         }
     }
@@ -160,6 +194,15 @@ class MusicActivity : Activity() {
         render(MusicPlayback.snapshot())
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // A freshly opened page (or one coming back from the screensaver) can end up with no
+        // focused view at all, and then the first D-pad press goes nowhere.
+        if (hasFocus && currentFocus == null && !isFinishing) {
+            if (mvMode) showMvControls() else playButton.requestFocus()
+        }
+    }
+
     override fun onBackPressed() {
         if (biliSheet != null) {
             closeBiliSheet()
@@ -170,14 +213,62 @@ class MusicActivity : Activity() {
             closeSheet()
             return
         }
+        // Full-screen MV with the bar up: the first Back only tucks the bar away. With the bar
+        // hidden Back leaves the page exactly as it always did.
+        if (mvMode && controlsVisible) {
+            hideMvControls()
+            return
+        }
         super.onBackPressed()
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> { MusicPlayback.toggle(); true }
-        KeyEvent.KEYCODE_MEDIA_NEXT -> { MusicPlayback.next(); true }
-        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { MusicPlayback.previous(); true }
-        else -> super.onKeyDown(keyCode, event)
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
+                MusicPlayback.toggle()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                MusicPlayback.next()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                MusicPlayback.previous()
+                return true
+            }
+        }
+        if (mvMode) {
+            if (controlsVisible) {
+                // Any key is an action: the bar's idle five seconds start over.
+                touchMvControls()
+            } else if (isWakeKey(keyCode)) {
+                // The key that brings the bar back only brings it back; it does not also move focus.
+                showMvControls()
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (mvMode) {
+            if (!controlsVisible && ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                showMvControls()
+                return true
+            }
+            if (controlsVisible) touchMvControls()
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** The remote keys that bring a hidden MV control bar back. */
+    private fun isWakeKey(keyCode: Int): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+        KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+        KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SPACE,
+        KeyEvent.KEYCODE_TAB,
+        -> true
+        else -> false
     }
 
     // ---- layout ----
@@ -191,10 +282,11 @@ class MusicActivity : Activity() {
         disc = DiscView(this)
         place(disc, 26f, 110f, 334f, 334f)
 
-        // MV mode puts the video where the record was; 16:9 inside the disc's square column.
-        // A TextureView (not SurfaceView) because the surface has to exist before the player is
-        // built: ijk's MediaCodec wants its output surface at configure time on this 4.4 box.
-        // It therefore stays attached and VISIBLE, with alpha 0 while the record is showing.
+        // The MV owns the whole screen, so the video target covers the page and stays attached at
+        // alpha 0 in audio mode (the record shows through). A TextureView (not SurfaceView)
+        // because the surface has to exist before the player is built: ijk's MediaCodec wants its
+        // output surface at configure time on this 4.4 box. Its transform crops the picture to fill
+        // the screen (see [applyVideoFill]).
         mvView = TextureView(this).apply {
             alpha = 0f
             isClickable = false
@@ -204,7 +296,9 @@ class MusicActivity : Activity() {
                     MusicPlayback.setSurface(Surface(texture))
                 }
 
-                override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, width: Int, height: Int) = Unit
+                override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                    applyVideoFill()
+                }
 
                 override fun onSurfaceTextureDestroyed(texture: android.graphics.SurfaceTexture): Boolean {
                     // Back or the screensaver: the video keeps decoding into nothing, the audio goes on.
@@ -215,28 +309,36 @@ class MusicActivity : Activity() {
                 override fun onSurfaceTextureUpdated(texture: android.graphics.SurfaceTexture) = Unit
             }
         }
-        place(mvView, 26f, 110f, 334f, 188f)
+        place(mvView, 0f, 0f, 960f, 540f)
+        mvView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyVideoFill() }
 
+        // The MV's overlays: a top gradient behind the title/badge and a bottom one behind the bar.
+        mvTopScrim = View(this).apply {
+            setBackgroundDrawable(scrim(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC000000.toInt(), 0x00000000)))
+            visibility = View.GONE
+        }
+        place(mvTopScrim, 0f, 0f, 960f, 200f)
+        mvBottomScrim = View(this).apply {
+            setBackgroundDrawable(scrim(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE0000000.toInt(), 0x00000000)))
+            visibility = View.GONE
+        }
+        place(mvBottomScrim, 0f, 420f, 960f, 120f)
+
+        // Only on screen while a MV plays, floating over the picture's top-left corner.
         mvBadge = label(11f, 600, Ui.WHITE).apply {
             gravity = Gravity.CENTER
             text = "MV·QM"
             setBackgroundDrawable(rounded(0xCC6D5BFF.toInt(), 0x66FFFFFF, 9f))
             visibility = View.GONE
         }
-        place(mvBadge, 34f, 118f, 86f, 22f)
+        place(mvBadge, 48f, 108f, 86f, 22f)
 
         mvTitleView = label(11f, 500, 0xCCEBEBF5.toInt()).apply {
-            maxLines = 2
-            setLineSpacing(Ui.px(2f), 1f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             visibility = View.GONE
         }
-        place(mvTitleView, 26f, 304f, 334f, 40f)
-
-        // 播放中换 B站 MV：结果列表的第二入口（倒计时/开播后收起的面板可以再打开）。
-        biliListButton = PillButton(this, "B站列表")
-        place(biliListButton, 26f, 352f, 116f, 38f)
-        biliListButton.visibility = View.GONE
-        biliListButton.setOnClickListener { openBiliSheet(MusicPlayback.snapshot(), auto = false) }
+        place(mvTitleView, 144f, 108f, 700f, 22f)
 
         titleView = label(27f, 600, Ui.WHITE).apply {
             maxLines = 1
@@ -274,27 +376,21 @@ class MusicActivity : Activity() {
         place(statusView, 380f, 488f, 400f, 20f)
 
         val prev = PillButton(this, "上一首")
-        place(prev, 380f, 438f, 58f, 46f)
         prev.setOnClickListener { MusicPlayback.previous() }
 
         playButton = PillButton(this, "播放")
-        place(playButton, 444f, 438f, 84f, 46f)
         playButton.setOnClickListener { MusicPlayback.toggle() }
 
         val next = PillButton(this, "下一首")
-        place(next, 534f, 438f, 58f, 46f)
         next.setOnClickListener { MusicPlayback.next() }
 
         qualityButton = PillButton(this, "音质")
-        place(qualityButton, 598f, 438f, 58f, 46f)
         qualityButton.setOnClickListener { showQualitySheet() }
 
         mvButton = PillButton(this, "MV 开")
-        place(mvButton, 662f, 438f, 64f, 46f)
         mvButton.setOnClickListener { MusicPlayback.setMvEnabled(!MusicPlayback.mvEnabled()) }
 
         sourceButton = PillButton(this, "源 QM")
-        place(sourceButton, 732f, 438f, 74f, 46f)
         sourceButton.setOnClickListener {
             val nextSource = if (MusicPlayback.mvSource() == CastConfig.MV_SOURCE_BILI) {
                 CastConfig.MV_SOURCE_QM
@@ -305,8 +401,31 @@ class MusicActivity : Activity() {
         }
 
         val back = PillButton(this, "返回")
-        place(back, 812f, 438f, 40f, 46f)
         back.setOnClickListener { finish() }
+
+        // 播放中换 B站 MV：结果列表的第二个入口，只存在于 MV 全屏的那条控件里。
+        mvBiliButton = PillButton(this, "B站列表")
+        mvBiliButton.visibility = View.GONE
+        mvBiliButton.setOnClickListener { openBiliSheet(MusicPlayback.snapshot(), auto = false) }
+
+        // One row serves both modes: placed at (380,438) with its fixed widths it is exactly the
+        // record player's old bar; in MV mode the row spans the page and centres the buttons at the
+        // bottom of the full-screen picture (and fades out with them).
+        controlsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        barButtons = listOf(prev, playButton, next, qualityButton, mvButton, sourceButton, back, mvBiliButton)
+        val barWidths = floatArrayOf(58f, 84f, 58f, 58f, 64f, 74f, 40f, 82f)
+        for ((index, button) in barButtons.withIndex()) {
+            controlsRow.addView(
+                button,
+                LinearLayout.LayoutParams(Ui.pxi(barWidths[index]), Ui.pxi(46f)).apply {
+                    if (index > 0) leftMargin = Ui.pxi(6f)
+                },
+            )
+        }
+        place(controlsRow, 380f, 438f, 472f, 46f)
 
         // Explicit D-pad order: geometry alone puts the sheet and the disc into the search too.
         prev.id = ID_PREV
@@ -316,7 +435,7 @@ class MusicActivity : Activity() {
         mvButton.id = ID_MV
         sourceButton.id = ID_SOURCE
         back.id = ID_BACK
-        biliListButton.id = ID_BILI_LIST
+        mvBiliButton.id = ID_BILI_LIST
         prev.nextFocusRightId = playButton.id
         playButton.nextFocusRightId = next.id
         next.nextFocusRightId = qualityButton.id
@@ -331,19 +450,19 @@ class MusicActivity : Activity() {
         next.nextFocusLeftId = playButton.id
         playButton.nextFocusLeftId = prev.id
         prev.nextFocusLeftId = back.id
-        for (button in listOf(prev, playButton, next, qualityButton, mvButton, sourceButton, back)) {
+        for (button in barButtons) {
             button.nextFocusUpId = playButton.id
         }
-        biliListButton.nextFocusDownId = playButton.id
 
 
-        val hint = label(11f, 500, 0x4DEBEBF5)
-        hint.text = "方向键选择 · OK 确认 · 返回键离开"
-        hint.gravity = Gravity.CENTER_HORIZONTAL
-        place(hint, 380f, 510f, 382f, 18f)
+        hintView = label(11f, 500, 0x4DEBEBF5)
+        hintView.text = "方向键选择 · OK 确认 · 返回键离开"
+        hintView.gravity = Gravity.CENTER_HORIZONTAL
+        place(hintView, 380f, 510f, 382f, 18f)
 
-        // The right column: the phone's QR, then what the guests have queued.
-        val qrFrame = FrameLayout(this).apply { setBackgroundDrawable(rounded(0xFFFFFFFF.toInt(), 0, 12f)) }
+        // The right column: the phone's QR, then what the guests have queued. Both step aside for
+        // a full-screen MV and come back with the record player.
+        qrFrame = FrameLayout(this).apply { setBackgroundDrawable(rounded(0xFFFFFFFF.toInt(), 0, 12f)) }
         place(qrFrame, 790f, 34f, 140f, 140f)
         qrView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY }
         qrFrame.addView(qrView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -351,7 +470,7 @@ class MusicActivity : Activity() {
         qrLabel.text = "手机扫码点歌"
         place(qrLabel, 780f, 178f, 160f, 20f)
 
-        val queueTitle = label(13f, 600, 0x99EBEBF5.toInt())
+        queueTitle = label(13f, 600, 0x99EBEBF5.toInt())
         queueTitle.text = "已点歌单"
         place(queueTitle, 780f, 208f, 160f, 22f)
 
@@ -367,8 +486,10 @@ class MusicActivity : Activity() {
         root.post { playButton.requestFocus() }
     }
 
+    /** Adds a view to the page the first time and only re-frames it afterwards (the MV re-layout). */
     private fun place(view: View, x: Float, y: Float, w: Float, h: Float) {
-        root.addView(view, frame(x, y, w, h))
+        val params = frame(x, y, w, h)
+        if (view.parent == null) root.addView(view, params) else view.layoutParams = params
     }
 
     private fun frame(x: Float, y: Float, w: Float, h: Float): FrameLayout.LayoutParams =
@@ -392,6 +513,10 @@ class MusicActivity : Activity() {
             setColor(fill)
             if (stroke != 0) setStroke(Ui.pxi(strokeWidth).coerceAtLeast(1), stroke)
         }
+
+    /** A one-way fade for the MV overlays: invisible at the bottom, opaque at the other end. */
+    private fun scrim(orientation: GradientDrawable.Orientation, colors: IntArray): GradientDrawable =
+        GradientDrawable(orientation, colors)
 
     private fun addLyricTop() {
         lyricBox.addView(View(this), LinearLayout.LayoutParams(1, Ui.pxi(100f)))
@@ -472,21 +597,20 @@ class MusicActivity : Activity() {
     }
 
     private fun updateStatus(snapshot: MusicSnapshot) {
-        statusView.text = snapshot.notice.ifEmpty { snapshot.status }
+        val line = snapshot.notice.ifEmpty { snapshot.status }
+        lastStatusLine = line
+        statusView.text = line
     }
 
     /**
-     * MV on: the video owns the disc's column and the lyric list is made INVISIBLE (not removed,
-     * not rebuilt) so coming back to audio restores the same scroll position and highlight.
+     * Paints the MV-dependent parts of the page. A MV that really owns the surface switches the
+     * page into its full-screen layout; anything else is the record player as it always was.
      */
     private fun applyMvState(snapshot: MusicSnapshot) {
         val mvActive = snapshot.mvActive
         val bili = snapshot.mvSource == CastConfig.MV_SOURCE_BILI
-        disc.visibility = if (mvActive) View.GONE else View.VISIBLE
         // alpha, not GONE: the TextureView's surface must live on so the next MV has a target.
         mvView.alpha = if (mvActive) 1f else 0f
-        mvBadge.visibility = if (mvActive) View.VISIBLE else View.GONE
-        mvTitleView.visibility = if (mvActive) View.VISIBLE else View.GONE
         mvBadge.text = if (bili) "MV·B站" else "MV·QM"
         mvTitleView.text = when {
             !mvActive -> ""
@@ -497,26 +621,149 @@ class MusicActivity : Activity() {
         mvButton.text = if (snapshot.mvEnabled) "MV 开" else "MV 关"
         sourceButton.text = if (bili) "源 B站" else "源 QM"
 
-        // During B站 playback the picker's second entrance sits under the video (Up from 播放).
-        val showBiliList = bili && snapshot.mvActive
-        biliListButton.visibility = if (showBiliList) View.VISIBLE else View.GONE
-        biliListButton.isFocusable = showBiliList
-        playButton.nextFocusUpId = if (showBiliList) ID_BILI_LIST else ID_PLAY
+        // The B站 picker's second entrance rides in the MV bar; audio mode has no video to change.
+        mvBiliButton.visibility = if (mvActive && bili) View.VISIBLE else View.GONE
+        mvBiliButton.isFocusable = mvActive && bili
 
-        if (mvActive != lyricsHidden) {
-            lyricsHidden = mvActive
-            lyricScroll.visibility = if (mvActive) View.INVISIBLE else View.VISIBLE
-            if (!mvActive) {
-                // Back on audio: jump straight to the line the song is on, no list rebuild.
-                handler.post { syncLyric(MusicPlayback.positionMs(), force = true) }
-            }
+        if (snapshot.mvVideoWidth > 0 && snapshot.mvVideoHeight > 0 &&
+            (snapshot.mvVideoWidth != videoWidth || snapshot.mvVideoHeight != videoHeight)
+        ) {
+            videoWidth = snapshot.mvVideoWidth
+            videoHeight = snapshot.mvVideoHeight
+            applyVideoFill()
         }
+        if (mvActive != mvMode) {
+            mvMode = mvActive
+            applyMvLayout(mvActive)
+        }
+
         if (mvActive && biliSheet != null && biliSheetAuto) closeBiliSheet()
         if (!bili) closeBiliSheet()
         // A new search (next song, re-search) invalidates the rows the open sheet is showing.
         if (biliSheet != null && snapshot.biliToken != shownBiliToken) closeBiliSheet()
         refreshBiliSheet(snapshot)
         maybeOpenBiliSheet(snapshot)
+    }
+
+    /**
+     * Full-screen MV: the picture covers the page and only the song's name, the badge, the position
+     * and a bottom control bar float over it. The record, the lyric list, the queue and the QR step
+     * aside (the lyric list is INVISIBLE, not rebuilt, so audio mode gets its scroll back). Every
+     * one of them is put back exactly where the record player had it when the MV ends.
+     */
+    private fun applyMvLayout(mv: Boolean) {
+        backdrop.visibility = if (mv) View.GONE else View.VISIBLE
+        root.setBackgroundColor(if (mv) 0xFF000000.toInt() else 0xFF07070A.toInt())
+        disc.visibility = if (mv) View.GONE else View.VISIBLE
+        mvTopScrim.visibility = if (mv) View.VISIBLE else View.GONE
+        mvBottomScrim.visibility = if (mv) View.VISIBLE else View.GONE
+        mvBadge.visibility = if (mv) View.VISIBLE else View.GONE
+        mvTitleView.visibility = if (mv) View.VISIBLE else View.GONE
+        albumView.visibility = if (mv) View.GONE else View.VISIBLE
+        qualityBadge.visibility = if (mv) View.GONE else View.VISIBLE
+        qrFrame.visibility = if (mv) View.GONE else View.VISIBLE
+        qrLabel.visibility = if (mv) View.GONE else View.VISIBLE
+        queueTitle.visibility = if (mv) View.GONE else View.VISIBLE
+        queueBox.visibility = if (mv) View.GONE else View.VISIBLE
+        nextView.visibility = if (mv) View.GONE else View.VISIBLE
+        hintView.visibility = if (mv) View.GONE else View.VISIBLE
+        lyricsHidden = mv
+        lyricScroll.visibility = if (mv) View.INVISIBLE else View.VISIBLE
+        if (!mv) {
+            // Back on audio: jump straight to the line the song is on, no list rebuild.
+            handler.post { syncLyric(MusicPlayback.positionMs(), force = true) }
+        }
+
+        if (mv) {
+            place(titleView, 48f, 32f, 660f, 42f)
+            place(singerView, 48f, 76f, 660f, 26f)
+            place(statusView, 48f, 140f, 700f, 20f)
+            // The position sits in the same top-left block: the picture's own watermark lives in
+            // the top-right corner, so nothing is written over it.
+            place(timeView, 48f, 168f, 320f, 22f)
+            timeView.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            timeView.textPx(12f)
+            timeView.setTextColor(0xCCEBEBF5.toInt())
+            place(controlsRow, 0f, 468f, 960f, 46f)
+            for (button in barButtons) button.nextFocusUpId = button.id
+            showMvControls(CONTROLS_START_MS)
+        } else {
+            dropMvControls()
+            place(titleView, 380f, 40f, 382f, 38f)
+            place(singerView, 380f, 82f, 382f, 24f)
+            place(statusView, 380f, 488f, 400f, 20f)
+            place(timeView, 380f, 414f, 200f, 18f)
+            timeView.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            timeView.textPx(11f)
+            timeView.setTextColor(0x66EBEBF5.toInt())
+            place(controlsRow, 380f, 438f, 472f, 46f)
+            for (button in barButtons) button.nextFocusUpId = playButton.id
+            controlsRow.visibility = View.VISIBLE
+            controlsRow.alpha = 1f
+            mvBottomScrim.alpha = 1f
+        }
+        applyVideoFill()
+    }
+
+    /**
+     * The TextureView stretches its texture to its own bounds; scale it back so the picture fills
+     * the screen at its own aspect ratio, cropping the overflow — no black bars, no squeeze. 16:9
+     * is assumed until the decoder reports the real size.
+     */
+    private fun applyVideoFill() {
+        val width = mvView.width
+        val height = mvView.height
+        if (width <= 0 || height <= 0) return
+        val srcWidth = if (videoWidth > 0) videoWidth else 16
+        val srcHeight = if (videoHeight > 0) videoHeight else 9
+        val fill = max(width.toFloat() / srcWidth, height.toFloat() / srcHeight)
+        val matrix = Matrix()
+        matrix.setScale(fill * srcWidth / width, fill * srcHeight / height, width / 2f, height / 2f)
+        runCatching { mvView.setTransform(matrix) }
+    }
+
+    /** Brings the MV bar back (and starts its idle countdown) after a key, a tap or playback. */
+    private fun showMvControls(autoHideMs: Long = CONTROLS_IDLE_MS) {
+        if (!mvMode) return
+        handler.removeCallbacks(hideControlsTask)
+        val wasHidden = !controlsVisible
+        controlsVisible = true
+        controlsRow.animate().cancel()
+        controlsRow.visibility = View.VISIBLE
+        if (wasHidden) controlsRow.alpha = 0f
+        controlsRow.animate().alpha(1f).setDuration(160L).start()
+        mvBottomScrim.animate().cancel()
+        mvBottomScrim.animate().alpha(1f).setDuration(160L).start()
+        if (wasHidden && currentFocus !is PillButton) playButton.requestFocus()
+        handler.postDelayed(hideControlsTask, autoHideMs)
+    }
+
+    /**
+     * Fades the MV bar out. It stays VISIBLE (at alpha 0) so the focused button keeps its focus:
+     * a key press then brings the same button back instead of the D-pad starting over.
+     */
+    private fun hideMvControls() {
+        handler.removeCallbacks(hideControlsTask)
+        if (!controlsVisible) return
+        controlsVisible = false
+        controlsRow.animate().cancel()
+        controlsRow.animate().alpha(0f).setDuration(220L).start()
+        mvBottomScrim.animate().cancel()
+        mvBottomScrim.animate().alpha(0f).setDuration(220L).start()
+    }
+
+    /** Any key or tap while the bar is up pushes its idle countdown back. */
+    private fun touchMvControls() {
+        handler.removeCallbacks(hideControlsTask)
+        if (controlsVisible) handler.postDelayed(hideControlsTask, CONTROLS_IDLE_MS)
+    }
+
+    /** Leaving full-screen MV: the bar goes back to being a permanent part of the record player. */
+    private fun dropMvControls() {
+        handler.removeCallbacks(hideControlsTask)
+        controlsVisible = false
+        controlsRow.animate().cancel()
+        mvBottomScrim.animate().cancel()
     }
 
     /** Paints the song's metadata; loading its lyric and cover happens once per song. */
@@ -1136,6 +1383,10 @@ class MusicActivity : Activity() {
         private const val ID_MV = 1006
         private const val ID_SOURCE = 1007
         private const val ID_BILI_LIST = 1008
+        /** A MV starts with the controls up; they fade once playback has settled. */
+        private const val CONTROLS_START_MS = 3_000L
+        /** Every key or tap after that gives the controls another five seconds. */
+        private const val CONTROLS_IDLE_MS = 5_000L
 
         /** Opens the jukebox from Home or from an agent command (a worker thread may call this). */
         fun start(context: Context) {
