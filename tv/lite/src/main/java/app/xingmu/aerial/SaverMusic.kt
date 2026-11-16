@@ -18,16 +18,20 @@ import app.xingmu.aerial.cast.MusicSnapshot
 import app.xingmu.aerial.cast.MusicSong
 
 /**
- * What is playing, over the screensaver: a small translucent card with the cover, the song and a
- * few lyric lines. It has no actions and takes no focus — the screensaver must stay a picture, not
- * a remote control. SaverView feeds it the player's state; it only draws.
+ * What is playing, over the screensaver: a small translucent card with the cover, the song's name
+ * and its singer, and a dot while it plays. It has no actions and takes no focus — the screensaver
+ * must stay a picture, not a remote control. SaverView feeds it the player's state; it only draws.
  *
- * In MV mode the card shows the MV's cover and a 「MV·QM」/「MV·B站」 badge instead of the lyric
- * lines, and SaverView paints that cover behind everything.
+ * The lyric is deliberately NOT in the card any more: [SaverLyric] draws the one line the song is
+ * on in the screen's bottom-left corner, where it cannot crowd the picture's top-right.
+ *
+ * In MV mode the card shows the MV's cover and a 「MV·QM」/「MV·B站」 badge instead of the lyric.
  */
 class SaverMusic(context: Context) : View(context) {
     private var song: MusicSong? = null
     private var playing = false
+    /** MV mode's smaller card: its cover sits a little higher to leave the badge its corner. */
+    var compact = false
     private var cover: Bitmap? = null
     /** The URL the current [cover] came from: the MV's cover, else the song's album art. */
     private var coverKey = ""
@@ -61,18 +65,6 @@ class SaverMusic(context: Context) : View(context) {
         textSize = Ui.px(11.5f)
         typeface = Ui.font(500)
         color = 0x8AFFFFFF.toInt()
-        setShadowLayer(Ui.px(3f), 0f, 0f, 0x99000000.toInt())
-    }
-    private val lyricCurrent = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
-        textSize = Ui.px(16f)
-        typeface = Ui.font(600)
-        color = 0xC0FFFFFF.toInt()
-        setShadowLayer(Ui.px(4f), 0f, 0f, 0x99000000.toInt())
-    }
-    private val lyricOther = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
-        textSize = Ui.px(12.5f)
-        typeface = Ui.font(500)
-        color = 0x4DFFFFFF
         setShadowLayer(Ui.px(3f), 0f, 0f, 0x99000000.toInt())
     }
     private val cardRect = RectF()
@@ -131,6 +123,13 @@ class SaverMusic(context: Context) : View(context) {
         invalidate()
     }
 
+    /** The line the song is on right now, for [SaverLyric]; null until the lyric has loaded. */
+    fun currentLine(): String? {
+        if (lyrics.isEmpty()) return null
+        val at = if (lyricIndex >= 0) lyricIndex else 0
+        return lyrics.getOrNull(at)?.text?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
     private fun loadCover(url: String) {
         MusicApi.cover(url) { bitmap, _ ->
             if (url == coverKey && bitmap != null) {
@@ -169,7 +168,9 @@ class SaverMusic(context: Context) : View(context) {
 
         val size = Ui.px(52f)
         val left = Ui.px(10f)
-        val top = (h - size) / 2f - Ui.px(12f)
+        // The audio card is only the cover + name + singer row; the MV card keeps the old offset
+        // so its badge still sits above the cover.
+        val top = (h - size) / 2f - Ui.px(if (compact) 12f else 0f)
         coverRect.set(left, top, left + size, top + size)
         val bitmap = cover
         if (bitmap != null) {
@@ -201,7 +202,7 @@ class SaverMusic(context: Context) : View(context) {
             canvas.drawRoundRect(badgeRect, Ui.px(11f), Ui.px(11f), badge)
             val label = if (mvSource == CastConfig.MV_SOURCE_BILI) "MV·B站" else "MV·QM"
             canvas.drawText(label, badgeRect.centerX(), badgeRect.centerY() + Ui.px(4f), badgeText)
-            // MV mode: no lyric rows on the saver, only cover + song + badge.
+            // MV mode: only cover + song + badge on the card; no lyric anywhere on the saver.
             return
         }
 
@@ -209,24 +210,7 @@ class SaverMusic(context: Context) : View(context) {
             card.color = 0xCC6EE7A0.toInt()
             canvas.drawCircle(w - Ui.px(18f), Ui.px(20f), Ui.px(3f), card)
         }
-
-        val lines = lyrics
-        if (lines.isEmpty()) {
-            canvas.drawText("♪ 正在播放", textLeft, Ui.px(101f), lyricOther)
-            return
-        }
-        val at = if (lyricIndex >= 0) lyricIndex else 0
-        if (at > 0) {
-            canvas.drawText(fit(lines[at - 1].text, lyricOther, maxText), textLeft, Ui.px(78f), lyricOther)
-        }
-        val current = lines.getOrNull(at)
-        if (current != null) {
-            canvas.drawText(fit(current.text, lyricCurrent, maxText), textLeft, Ui.px(103f), lyricCurrent)
-        }
-        val next = lines.getOrNull(at + 1)
-        if (next != null) {
-            canvas.drawText(fit(next.text, lyricOther, maxText), textLeft, Ui.px(125f), lyricOther)
-        }
+        // No lyric here: [SaverLyric] draws the line the song is on in the bottom-left corner.
     }
 
     private fun fit(text: String, paint: Paint, maxWidth: Float): String {
@@ -234,5 +218,59 @@ class SaverMusic(context: Context) : View(context) {
         var cut = text
         while (cut.length > 1 && paint.measureText(cut + "…") > maxWidth) cut = cut.substring(0, cut.length - 1)
         return cut + "…"
+    }
+}
+
+/**
+ * The lyric line the song is on, at the screensaver's bottom-left corner: exactly one line, so a
+ * wall of words never covers the picture (the card keeps only cover, name and singer). SaverView
+ * hands it the line the player's own ticker is on; it takes no focus and has no actions.
+ */
+class SaverLyric(context: Context) : View(context) {
+    private var line = ""
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+        textSize = Ui.px(19f)
+        typeface = Ui.font(600)
+        color = 0xEBFFFFFF.toInt()
+        setShadowLayer(Ui.px(4f), 0f, 0f, 0xB3000000.toInt())
+    }
+
+    init {
+        isFocusable = false
+        isClickable = false
+        visibility = GONE
+    }
+
+    /** Shows [text]; null or blank hides the view (no lyric yet, MV on screen, MV saver mode). */
+    fun update(text: String?) {
+        val next = text?.trim().orEmpty()
+        if (next.isEmpty()) {
+            if (line.isNotEmpty()) {
+                line = ""
+                invalidate()
+            }
+            if (visibility != GONE) visibility = GONE
+            return
+        }
+        if (next != line) {
+            line = next
+            invalidate()
+        }
+        if (visibility != VISIBLE) visibility = VISIBLE
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        if (line.isEmpty()) return
+        // Its own box is 45% of the canvas wide; one over-long line is cut with an ellipsis.
+        val text = fit(line, width.toFloat())
+        val baseline = height / 2f - (paint.descent() + paint.ascent()) / 2f
+        canvas.drawText(text, 0f, baseline, paint)
+    }
+
+    private fun fit(text: String, maxWidth: Float): String {
+        if (paint.measureText(text) <= maxWidth) return text
+        var cut = text
+        while (cut.length > 1 && paint.measureText(cut + "…") > maxWidth) cut = cut.substring(0, cut.length - 1)
+        return cut.trimEnd() + "…"
     }
 }

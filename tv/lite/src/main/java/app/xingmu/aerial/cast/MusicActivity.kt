@@ -80,6 +80,8 @@ class MusicActivity : Activity() {
     private lateinit var qualityButton: PillButton
     private lateinit var mvButton: PillButton
     private lateinit var sourceButton: PillButton
+    /** 返回 is the bar's last button in audio mode; with the B站 list on the bar it comes after. */
+    private lateinit var backButton: PillButton
     private lateinit var qrView: ImageView
     private lateinit var qrLabel: TextView
     private lateinit var backdrop: BackdropView
@@ -104,10 +106,15 @@ class MusicActivity : Activity() {
     private var qrUrl = ""
     private var qrCheckAt = 0L
     private var sheet: View? = null
-    /** The B站 result picker; [biliSheetAuto] means the countdown opened it and may close it. */
+    /**
+     * The B站 result picker; [biliSheetAuto] means the three second countdown opened it and may
+     * still pick the first hit for the viewer. Any key, tap or Back turns that off (see
+     * [cancelBiliAutoPlay]) and the sheet stays up until the viewer presses OK.
+     */
     private var biliSheet: View? = null
     private var biliSheetAuto = false
     private var biliSheetHint: TextView? = null
+    private var biliSheetHeading: TextView? = null
     /** The search a sheet was already opened for, so closing it is not undone by the next tick. */
     private var shownBiliToken = -1
     /** The lyric list is INVISIBLE (not gone) while a MV plays: it keeps its scroll and highlight. */
@@ -204,6 +211,8 @@ class MusicActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        // The B站 list: Back is the viewer's own answer, so the countdown must not fire once it is
+        // gone (closeBiliSheet cancels it) and whatever plays now keeps playing.
         if (biliSheet != null) {
             closeBiliSheet()
             return
@@ -220,6 +229,27 @@ class MusicActivity : Activity() {
             return
         }
         super.onBackPressed()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Any key while the countdown is still armed is the viewer choosing a MV themselves: the
+        // countdown is stopped here, before the D-pad moves the focus, so the first hit can never
+        // start under a focus the viewer is already moving.
+        if (biliSheet != null && biliSheetAuto && event.action == KeyEvent.ACTION_DOWN) cancelBiliAutoPlay()
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // A tap anywhere on the sheet (a row, the buttons, the backdrop) is the same answer.
+        if (biliSheet != null && biliSheetAuto && ev.actionMasked == MotionEvent.ACTION_DOWN) cancelBiliAutoPlay()
+        if (mvMode) {
+            if (!controlsVisible && ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                showMvControls()
+                return true
+            }
+            if (controlsVisible) touchMvControls()
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -248,17 +278,6 @@ class MusicActivity : Activity() {
             }
         }
         return super.onKeyDown(keyCode, event)
-    }
-
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (mvMode) {
-            if (!controlsVisible && ev.actionMasked == MotionEvent.ACTION_DOWN) {
-                showMvControls()
-                return true
-            }
-            if (controlsVisible) touchMvControls()
-        }
-        return super.dispatchTouchEvent(ev)
     }
 
     /** The remote keys that bring a hidden MV control bar back. */
@@ -402,6 +421,7 @@ class MusicActivity : Activity() {
 
         val back = PillButton(this, "返回")
         back.setOnClickListener { finish() }
+        backButton = back
 
         // 播放中换 B站 MV：结果列表的第二个入口，只存在于 MV 全屏的那条控件里。
         mvBiliButton = PillButton(this, "B站列表")
@@ -622,8 +642,14 @@ class MusicActivity : Activity() {
         sourceButton.text = if (bili) "源 B站" else "源 QM"
 
         // The B站 picker's second entrance rides in the MV bar; audio mode has no video to change.
-        mvBiliButton.visibility = if (mvActive && bili) View.VISIBLE else View.GONE
-        mvBiliButton.isFocusable = mvActive && bili
+        val biliListShown = mvActive && bili
+        mvBiliButton.visibility = if (biliListShown) View.VISIBLE else View.GONE
+        mvBiliButton.isFocusable = biliListShown
+        // The D-pad chain: 返回 is the last button in audio mode, but with 「B站列表」 on the bar the
+        // remote has to be able to reach it (and to wrap back to 上一首 from there).
+        backButton.nextFocusRightId = if (biliListShown) ID_BILI_LIST else ID_PREV
+        mvBiliButton.nextFocusRightId = ID_PREV
+        mvBiliButton.nextFocusLeftId = ID_BACK
 
         if (snapshot.mvVideoWidth > 0 && snapshot.mvVideoHeight > 0 &&
             (snapshot.mvVideoWidth != videoWidth || snapshot.mvVideoHeight != videoHeight)
@@ -1023,6 +1049,9 @@ class MusicActivity : Activity() {
     private fun maybeOpenBiliSheet(snapshot: MusicSnapshot) {
         if (!snapshot.mvEnabled || snapshot.mvSource != CastConfig.MV_SOURCE_BILI) return
         if (snapshot.biliResults.isEmpty() || snapshot.biliToken <= 0) return
+        // Only a live countdown opens the list by itself: a page opened again while the chosen MV
+        // is already playing must not flash the old results over the picture.
+        if (snapshot.biliCountdown <= 0) return
         if (snapshot.biliToken == shownBiliToken) return
         if (biliSheet != null || sheet != null || isFinishing) return
         openBiliSheet(snapshot, auto = true)
@@ -1030,6 +1059,8 @@ class MusicActivity : Activity() {
 
     private fun openBiliSheet(snapshot: MusicSnapshot, auto: Boolean) {
         if (biliSheet != null || snapshot.biliResults.isEmpty()) return
+        // Set before the hint is written: it reads differently while the countdown may still pick.
+        biliSheetAuto = auto
         val overlay = FrameLayout(this).apply {
             setBackgroundColor(0xC0000000.toInt())
             isClickable = true
@@ -1041,8 +1072,11 @@ class MusicActivity : Activity() {
             setPadding(Ui.pxi(22f), Ui.pxi(16f), Ui.pxi(22f), Ui.pxi(14f))
             isClickable = true
         }
-        val heading = label(17f, 600, Ui.WHITE).apply { text = "B站 MV" }
+        val heading = label(17f, 600, Ui.WHITE).apply {
+            text = if (auto) BILI_AUTO_TITLE else BILI_TITLE
+        }
         panel.addView(heading, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.pxi(30f)))
+        biliSheetHeading = heading
         val hint = label(12f, 500, 0x99EBEBF5.toInt()).apply {
             text = biliHint(snapshot)
             maxLines = 1
@@ -1072,6 +1106,7 @@ class MusicActivity : Activity() {
                     text.setBackgroundDrawable(if (focused) rounded(0xFFF5F5F7.toInt(), 0, 12f) else rounded(0x00FFFFFF, 0, 12f))
                 }
                 setOnClickListener {
+                    Log.i(TAG, "bili picker: OK on result #" + (index + 1) + " " + mv.title)
                     MusicPlayback.selectBili(index)
                     closeBiliSheet()
                 }
@@ -1125,32 +1160,60 @@ class MusicActivity : Activity() {
         overlay.addView(panel, FrameLayout.LayoutParams(Ui.pxi(430f), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         root.addView(overlay, frame(0f, 0f, 960f, 540f))
         biliSheet = overlay
-        biliSheetAuto = auto
         shownBiliToken = snapshot.biliToken
         (rows.firstOrNull() ?: close).requestFocus()
+        Log.i(
+            TAG,
+            "bili picker open auto=" + auto + " results=" + snapshot.biliResults.size +
+                " countdown=" + snapshot.biliCountdown + " focus=first",
+        )
     }
 
     private fun closeBiliSheet() {
         val overlay = biliSheet ?: return
+        // Closing the list is the viewer's answer too: nothing may start on its own afterwards.
+        if (biliSheetAuto) MusicPlayback.cancelBiliCountdown()
         biliSheet = null
         biliSheetAuto = false
         biliSheetHint = null
+        biliSheetHeading = null
         root.removeView(overlay)
         playButton.requestFocus()
+        Log.i(TAG, "bili picker closed")
+    }
+
+    /**
+     * The countdown is only a convenience: the moment the viewer touches the list (a D-pad key, a
+     * tap, OK or Back) the pick is theirs, the title loses its countdown and the hint says what to
+     * do. Playback goes on (the song resumes as audio if the search had stopped it).
+     */
+    private fun cancelBiliAutoPlay() {
+        if (!biliSheetAuto) return
+        biliSheetAuto = false
+        biliSheetHeading?.text = BILI_TITLE
+        biliSheetHint?.text = BILI_HINT_PICK
+        MusicPlayback.cancelBiliCountdown()
+        Log.i(TAG, "bili picker: interaction, auto-play cancelled")
     }
 
     private fun refreshBiliSheet(snapshot: MusicSnapshot) {
+        val heading = biliSheetHeading ?: return
         val hint = biliSheetHint ?: return
+        heading.text = if (autoPlayPending(snapshot)) BILI_AUTO_TITLE else BILI_TITLE
         hint.text = biliHint(snapshot)
     }
+
+    /** True while the three second countdown may still pick the first result for the viewer. */
+    private fun autoPlayPending(snapshot: MusicSnapshot): Boolean =
+        biliSheetAuto && snapshot.biliCountdown > 0
 
     private fun biliHint(snapshot: MusicSnapshot): String {
         val pick = snapshot.biliResults.getOrNull(snapshot.biliSelected)
         return when {
-            snapshot.biliCountdown > 0 && pick != null ->
-                snapshot.biliCountdown.toString() + " 秒后播放：" + pick.title
+            autoPlayPending(snapshot) && pick != null ->
+                snapshot.biliCountdown.toString() + " 秒后自动播放：" + pick.title
             snapshot.mvActive && pick != null -> "正在播放：" + pick.title
-            else -> "选择后立即播放 · 关键词：“" + snapshot.biliQuery + "”"
+            else -> BILI_HINT_PICK
         }
     }
 
@@ -1387,6 +1450,10 @@ class MusicActivity : Activity() {
         private const val CONTROLS_START_MS = 3_000L
         /** Every key or tap after that gives the controls another five seconds. */
         private const val CONTROLS_IDLE_MS = 5_000L
+        /** The B站 picker: its plain title, and the one that says the countdown is still running. */
+        private const val BILI_TITLE = "B站 MV"
+        private const val BILI_AUTO_TITLE = "B站 MV · 3 秒后自动播放第一项"
+        private const val BILI_HINT_PICK = "请选择要播放的 MV"
 
         /** Opens the jukebox from Home or from an agent command (a worker thread may call this). */
         fun start(context: Context) {

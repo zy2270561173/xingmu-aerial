@@ -50,6 +50,10 @@ import kotlin.random.Random
  * other; the middle of the picture is left alone. No MV playing (or 屏保 → 壁纸) and the saver is
  * the wallpaper clock it has always been.
  *
+ * A song playing over any of these: its cover, name and singer in the top-right card, and the one
+ * lyric line it is on in the bottom-left corner ([SaverLyric]) — never inside the card, and kept
+ * clear of the big clock and of the photo/film caption.
+ *
  * The time shows over the films and photos when Personalize says so.
  */
 class SaverView(context: Context, mode: ScreensaverMode, private val proxy: FilmProxy, private val wallpaper: Bitmap?) : FrameLayout(context) {
@@ -63,8 +67,13 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     private var failures = 0
     private var clockOnly = mode == ScreensaverMode.Clock
     private var clock: ClockView? = null
-    /** A quiet now-playing card with lyric lines; it only draws, it takes no key. */
+    /** A quiet now-playing card with cover, name, singer and a playing dot; it takes no key. */
     private val music = SaverMusic(context)
+    /**
+     * The one lyric line the song is on, in its own bottom-left corner: outside the card, clear of
+     * the big clock, 45% of the screen wide. Hidden while a MV is the picture.
+     */
+    private val lyric = SaverLyric(context)
     /**
      * MV 跟随：MV 正在播放时，屏保用 MV 封面当背景（和 Bing 壁纸一样整屏绘制），而不是纯黑；
      * 电影/照片/壁纸让位给这张图，卡片与时钟仍在上层。
@@ -133,6 +142,8 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
         override fun run() {
             val snapshot = MusicPlayback.snapshot()
             music.update(snapshot, MusicPlayback.positionMs())
+            // MV is the picture (or the MV saver's own mode): the lyric steps aside then.
+            lyric.update(if (snapshot.mvActive || mvSaver) null else music.currentLine())
             applyMv(snapshot)
             handler.postDelayed(this, 500L)
         }
@@ -207,15 +218,17 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     /** Puts the read-only now-playing card above whatever the screensaver is showing. */
     private fun installMusic(compact: Boolean = false) {
         // MV mode keeps the card small (`compact`): a third of the screen wide, in a corner, so the
-        // picture's middle is left to the video.
+        // picture's middle is left to the video. The audio card is a single row now that the lyric
+        // lives in its own corner view.
         val params = LayoutParams(
             Ui.pxi(if (compact) 320f else 410f),
-            Ui.pxi(if (compact) 132f else 140f),
+            Ui.pxi(if (compact) 132f else 84f),
             Gravity.TOP or Gravity.END,
         ).apply {
             topMargin = Ui.pxi(if (compact) 40f else 44f)
             rightMargin = Ui.pxi(if (compact) 48f else 56f)
         }
+        music.compact = compact
         if (music.parent == null) {
             music.alpha = 0.94f
             addView(music, params)
@@ -223,6 +236,14 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
             music.layoutParams = params
             music.bringToFront()
         }
+        // The lyric is a view of its own in the bottom-left corner, never inside the card. Above
+        // the film/photo caption when there is one, so the two never touch.
+        val lyricParams = LayoutParams(Ui.pxi(LYRIC_WIDTH), Ui.pxi(LYRIC_HEIGHT), Gravity.BOTTOM or Gravity.START).apply {
+            leftMargin = Ui.pxi(56f)
+            bottomMargin = Ui.pxi(if (caption.parent != null) 124f else LYRIC_BOTTOM)
+        }
+        if (lyric.parent == null) addView(lyric, lyricParams) else lyric.layoutParams = lyricParams
+        lyric.bringToFront()
     }
 
     /**
@@ -400,7 +421,10 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     private fun moveClock() {
         val c = clock ?: return
         val x = Ui.px(64f + (960f - 128f - 420f) * Random.nextFloat())
-        val y = Ui.px(56f + (Ui.canvasH - 112f - 170f) * Random.nextFloat())
+        // The bottom-left corner belongs to the lyric line: the big clock stops a gap above it
+        // instead of drifting onto it, so the two sit in one column without ever touching.
+        val maxY = Ui.canvasH - LYRIC_BOTTOM - LYRIC_HEIGHT - LYRIC_GAP - CLOCK_HEIGHT
+        val y = Ui.px(56f + (maxY - 56f).coerceAtLeast(0f) * Random.nextFloat())
         if (c.isHardwareAccelerated && c.alpha > 0f && c.translationX != 0f) {
             c.animate().alpha(0f).setDuration(1200).withLayerCompat().setListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
@@ -574,5 +598,13 @@ class SaverView(context: Context, mode: ScreensaverMode, private val proxy: Film
     private companion object {
         const val STALL_MS = 20_000L
         const val PHOTO_MS = 18_000L
+        /** The lyric's bottom-left box: 45% of the 960 wide canvas, one line tall, 52 off the bottom. */
+        const val LYRIC_WIDTH = 432f
+        const val LYRIC_HEIGHT = 34f
+        const val LYRIC_BOTTOM = 52f
+        /** What the clock keeps clear above the lyric. */
+        const val LYRIC_GAP = 24f
+        /** ClockView's own measured height in large mode. */
+        const val CLOCK_HEIGHT = 200f
     }
 }

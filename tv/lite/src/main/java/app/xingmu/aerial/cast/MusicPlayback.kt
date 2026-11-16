@@ -299,7 +299,27 @@ object MusicPlayback {
         main.post {
             val song = MusicQueue.current() ?: return@post
             if (biliResults.isEmpty()) return@post
-            playBili(song, index.coerceIn(0, biliResults.size - 1), loadToken)
+            val at = index.coerceIn(0, biliResults.size - 1)
+            Log.i(TAG, "bili pick #" + (at + 1) + ": " + biliResults[at].title)
+            playBili(song, at, loadToken)
+        }
+    }
+
+    /**
+     * A key, a tap or Back on the B站 picker before its countdown ran out: the viewer is choosing,
+     * so the countdown stops and OK decides. The song goes on meanwhile: switching the source had
+     * stopped it, and a silent jukebox while the list is open is not what "cancel" should mean.
+     */
+    fun cancelBiliCountdown() {
+        main.post {
+            if (biliCountdown <= 0) return@post
+            val was = biliCountdown
+            cancelCountdown()
+            status = "请选择要播放的 MV"
+            Log.i(TAG, "bili countdown cancelled at " + was + "s by user interaction")
+            notifyState()
+            val song = MusicQueue.current()
+            if (song != null && player == null && !prepared) playAudio(song, 0L, loadToken)
         }
     }
 
@@ -686,6 +706,8 @@ object MusicPlayback {
             biliCountdown = BILI_COUNTDOWN_SECONDS
             biliToken++
             status = biliCountdown.toString() + " 秒后播放：" + results[0].title
+            Log.i(TAG, "bili search: " + results.size + " results for \"" + biliQuery +
+                "\", countdown " + biliCountdown + "s, first: " + results[0].title)
             notifyState()
             startCountdown(song, token)
         }
@@ -700,10 +722,14 @@ object MusicPlayback {
                 if (biliCountdown > 0) {
                     status = biliCountdown.toString() + " 秒后播放：" +
                         (biliResults.getOrNull(biliSelected)?.title.orEmpty())
+                    Log.i(TAG, "bili countdown " + biliCountdown + "s: " +
+                        (biliResults.getOrNull(biliSelected)?.title.orEmpty()))
                     notifyState()
                     main.postDelayed(this, 1000L)
                 } else {
                     status = ""
+                    Log.i(TAG, "bili countdown done: auto-playing #" + (biliSelected + 1) + " " +
+                        (biliResults.getOrNull(biliSelected)?.title.orEmpty()))
                     notifyState()
                     playBili(song, biliSelected, token)
                 }
