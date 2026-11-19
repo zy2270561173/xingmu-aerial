@@ -24,8 +24,8 @@ android {
         // Android 4.0.
         minSdk = 14
         targetSdk = 34
-        versionCode = 41
-        versionName = "1.39"
+        versionCode = 42
+        versionName = "1.40"
         // Test hook for the built-in agent: -PcastBackendUrl=http://192.168.1.10:18000 bakes the
         // backend address into a debug build so a TV with no keyboard can still be pointed at it.
         buildConfigField(

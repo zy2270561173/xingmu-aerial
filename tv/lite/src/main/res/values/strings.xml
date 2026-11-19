@@ -69,4 +69,49 @@
     <string name="more_title" translatable="false">更多信息</string>
     <string name="conn_title" translatable="false">连接设置</string>
     <string name="conn_backend" translatable="false">后端</string>
+
+    <!-- 抖音, the built-in WebView tile. Like the cast strings above, this wording is the
+         product's own and stays Chinese until the other four language packs are done. -->
+    <string name="douyin_tile" translatable="false">抖音</string>
+    <string name="douyin_compat_title" translatable="false">这台电视的网页内核较旧</string>
+    <string name="douyin_compat_body" translatable="false">网页版抖音需要较新的 Chromium，本机是 Chromium %1$s，直接打开大概率是空白页。可以仍要尝试，或改用电视/手机上已安装的抖音。</string>
+    <string name="douyin_compat_try" translatable="false">仍然尝试加载网页版</string>
+    <string name="douyin_compat_app" translatable="false">用已安装的抖音打开</string>
+    <string name="douyin_compat_no_app" translatable="false">没有检测到已安装的抖音；也可以先在电视上安装抖音，再回来打开本页。</string>
+    <string name="douyin_loading_title" translatable="false">正在打开抖音</string>
+    <string name="douyin_loading_hint" translatable="false">首次打开请用手机抖音扫码登录</string>
+    <string name="douyin_top_hint" translatable="false">↑↓ 切换 · ←→ 快退/快进 · OK 播放/暂停 · 长按 OK 点赞 · 菜单 帮助</string>
+    <string name="douyin_help_title" translatable="false">遥控器按键</string>
+    <string name="douyin_help_updown_key" translatable="false">↑ / ↓</string>
+    <string name="douyin_help_updown" translatable="false">上下滚动、切换视频</string>
+    <string name="douyin_help_lr_key" translatable="false">← / →</string>
+    <string name="douyin_help_lr" translatable="false">快退 / 快进 10 秒</string>
+    <string name="douyin_help_ok_key" translatable="false">OK</string>
+    <string name="douyin_help_ok" translatable="false">播放 / 暂停</string>
+    <string name="douyin_help_hold_key" translatable="false">长按 OK</string>
+    <string name="douyin_help_hold" translatable="false">点赞</string>
+    <string name="douyin_help_menu_key" translatable="false">菜单</string>
+    <string name="douyin_help_menu" translatable="false">显示 / 隐藏本页</string>
+    <string name="douyin_help_back_key" translatable="false">返回</string>
+    <string name="douyin_help_back" translatable="false">退出全屏 / 退出抖音</string>
+    <string name="douyin_help_close" translatable="false">按菜单或 OK 关闭</string>
+    <string name="douyin_scroll_next" translatable="false">下一屏</string>
+    <string name="douyin_scroll_prev" translatable="false">上一屏</string>
+    <string name="douyin_next" translatable="false">下一条</string>
+    <string name="douyin_prev" translatable="false">上一条</string>
+    <string name="douyin_seek_none" translatable="false">这里没有可快进 / 快退的视频</string>
+    <string name="douyin_forward" translatable="false">快进</string>
+    <string name="douyin_backward" translatable="false">快退</string>
+    <string name="douyin_play" translatable="false">播放</string>
+    <string name="douyin_pause" translatable="false">暂停</string>
+    <string name="douyin_liked" translatable="false">已点赞</string>
+    <string name="douyin_like_none" translatable="false">这里没有点赞按钮</string>
+    <string name="douyin_no_video" translatable="false">没有找到视频</string>
+    <string name="douyin_open_login" translatable="false">打开登录</string>
+    <string name="douyin_webview_old" translatable="false">系统 WebView 版本偏旧（Chromium %1$s），抖音网页版可能显示不全。可在应用商店更新「Android System WebView」。</string>
+    <string name="douyin_webview_missing_title" translatable="false">这台电视打不开抖音</string>
+    <string name="douyin_webview_missing_body" translatable="false">系统的 WebView 组件不可用或启动失败。抖音网页版需要较新的浏览器内核，可以先在应用商店安装或更新「Android System WebView」再试。</string>
+    <string name="douyin_error_title" translatable="false">抖音没有加载出来</string>
+    <string name="douyin_error_body" translatable="false">网络或浏览器内核出错，抖音网页版没能打开。请检查电视的网络，然后再打开一次。</string>
+    <string name="douyin_exit_hint" translatable="false">按返回键退出</string>
 </resources>

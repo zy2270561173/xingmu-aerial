@@ -20,6 +20,7 @@ import android.os.Looper
 import android.os.SystemClock
 import app.xingmu.aerial.cast.CastConfig
 import app.xingmu.aerial.cast.CastService
+import app.xingmu.aerial.cast.DouyinActivity
 import app.xingmu.aerial.cast.MusicActivity
 import app.xingmu.aerial.cast.MusicApi
 import app.xingmu.aerial.cast.MusicPlayback
@@ -56,6 +57,7 @@ class HomeActivity : Activity(), HomeView.Host {
     private val folderTiles = HashMap<String, Pair<String, Bitmap>>()
     /** Made once: [arrange] runs on every install and reload, and a tile bitmap per run would pile up. */
     private val musicTile by lazy { MusicTile.entry(this) }
+    private val douyinTile by lazy { DouyinTile.entry(this) }
     private var musicCoverMid = ""
     private val musicListener: (MusicSnapshot) -> Unit = { snapshot ->
         if (!isFinishing) {
@@ -287,7 +289,7 @@ class HomeActivity : Activity(), HomeView.Host {
             // Home first, with stand-ins for tiles not made yet; then the real ones as they come.
             val first = AppCatalog.load(this, quick = true)
             Log.i(TAG, "${first.size} apps in ${System.currentTimeMillis() - started} ms")
-            handler.post { if (!isFinishing) { all = withMusic(first); arrange() } }
+            handler.post { if (!isFinishing) { all = withBuiltIns(first); arrange() } }
             if (first.any { it.placeholder }) {
                 val list = AppCatalog.load(this) { batch -> handler.post { if (!isFinishing) replace(batch) } }
                 Log.i(TAG, "${list.size} tiles made in ${System.currentTimeMillis() - started} ms")
@@ -306,9 +308,13 @@ class HomeActivity : Activity(), HomeView.Host {
         arrange()
     }
 
-    /** The jukebox is a tile like an app: LayoutStore may move it, fold it or hide it. */
-    private fun withMusic(list: List<AppEntry>): List<AppEntry> =
-        if (list.any { it.key == MusicTile.KEY }) list else list + musicTile
+    /** The built-in tiles (点歌台, 抖音) are tiles like apps: LayoutStore may move, fold or hide them. */
+    private fun withBuiltIns(list: List<AppEntry>): List<AppEntry> {
+        var out = list
+        if (out.none { it.key == MusicTile.KEY }) out = out + musicTile
+        if (out.none { it.key == DouyinTile.KEY }) out = out + douyinTile
+        return out
+    }
 
     private val reload = Runnable { loadApps() }
 
@@ -377,6 +383,11 @@ class HomeActivity : Activity(), HomeView.Host {
         // firmware from resetting the Home task and dropping the intent (M08, Android 4.4).
         if (app.key == MusicTile.KEY) {
             MusicActivity.start(this)
+            return
+        }
+        // 抖音 is the same kind of built-in tile, not an activity with a launcher filter.
+        if (app.key == DouyinTile.KEY) {
+            startActivity(Intent(this, DouyinActivity::class.java))
             return
         }
         // Kids and Elders mode opens only its own tiles, and none while locked.
