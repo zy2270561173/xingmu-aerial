@@ -130,12 +130,5 @@
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
         <!-- 抖音: the PC page in a WebView, driven by the remote. Landscape and hardware
              accelerated; the page's own overlays are injected HTML, so no widget is added. -->
-        <activity
-            android:name=".cast.DouyinActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:hardwareAccelerated="true"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
     </application>
 </manifest>

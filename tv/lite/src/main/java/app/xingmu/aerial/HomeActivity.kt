@@ -20,7 +20,6 @@ import android.os.Looper
 import android.os.SystemClock
 import app.xingmu.aerial.cast.CastConfig
 import app.xingmu.aerial.cast.CastService
-import app.xingmu.aerial.cast.DouyinActivity
 import app.xingmu.aerial.cast.MusicActivity
 import app.xingmu.aerial.cast.MusicApi
 import app.xingmu.aerial.cast.MusicPlayback
@@ -57,7 +56,6 @@ class HomeActivity : Activity(), HomeView.Host {
     private val folderTiles = HashMap<String, Pair<String, Bitmap>>()
     /** Made once: [arrange] runs on every install and reload, and a tile bitmap per run would pile up. */
     private val musicTile by lazy { MusicTile.entry(this) }
-    private val douyinTile by lazy { DouyinTile.entry(this) }
     private var musicCoverMid = ""
     private val musicListener: (MusicSnapshot) -> Unit = { snapshot ->
         if (!isFinishing) {
@@ -308,11 +306,10 @@ class HomeActivity : Activity(), HomeView.Host {
         arrange()
     }
 
-    /** The built-in tiles (点歌台, 抖音) are tiles like apps: LayoutStore may move, fold or hide them. */
+    /** The built-in tiles (点歌台) are tiles like apps: LayoutStore may move, fold or hide them. */
     private fun withBuiltIns(list: List<AppEntry>): List<AppEntry> {
         var out = list
         if (out.none { it.key == MusicTile.KEY }) out = out + musicTile
-        if (out.none { it.key == DouyinTile.KEY }) out = out + douyinTile
         return out
     }
 
@@ -383,11 +380,6 @@ class HomeActivity : Activity(), HomeView.Host {
         // firmware from resetting the Home task and dropping the intent (M08, Android 4.4).
         if (app.key == MusicTile.KEY) {
             MusicActivity.start(this)
-            return
-        }
-        // 抖音 is the same kind of built-in tile, not an activity with a launcher filter.
-        if (app.key == DouyinTile.KEY) {
-            startActivity(Intent(this, DouyinActivity::class.java))
             return
         }
         // Kids and Elders mode opens only its own tiles, and none while locked.
