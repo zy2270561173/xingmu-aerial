@@ -22,6 +22,8 @@ class CastService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // 系统预装（/system/app）时 nativeLibraryDir 里没有 ijk 的 .so，先补加载一次。
+        app.xingmu.aerial.NativeLibs.ensure(this)
         promote()
         CastAgent.start(this)
         // The TV is a DLNA renderer too, so a phone's cast button finds it while the agent runs.
