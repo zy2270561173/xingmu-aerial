@@ -531,7 +531,16 @@ object MusicPlayback {
         MusicApi.resolve(song.mid, song.quality) { play, error ->
             if (token != loadToken) return@resolve
             if (play == null) {
-                status = "无法播放：" + (error ?: "未知错误")
+                // 音源服务没会员/凭证过期时 502：有 MV 就用 MV 那条流（自带音轨）顶上，
+                // 免得用户点什么都是"无法播放"。
+                if (song.vid.isNotEmpty() && !mvFailed.contains(mvKey(song))) {
+                    Log.i(TAG, "audio source failed (" + (error ?: "") + "), falling back to the MV stream")
+                    status = "音源不可用，改用 MV 播放"
+                    notifyState()
+                    playQmMv(song, startMs, token)
+                    return@resolve
+                }
+                status = "无法播放：" + (error ?: "未知错误") + "（音乐服务需要有效会员）"
                 notifyState()
                 return@resolve
             }
